@@ -458,20 +458,20 @@ if st.session_state.is_admin and tab_admin is not None:
             if new_email.strip():
                 new_key = create_license(new_email.strip(), new_name.strip())
                 
-                # ALWAYS show the key on screen (even if email fails)
+                # ALWAYS show the key on screen
                 st.markdown(f"<div class='key-box'>{new_key}</div>", unsafe_allow_html=True)
                 
-                # Try to send email (fails silently on free tier)
+                # Try email (fails silently on free tier)
                 try:
                     ok = send_welcome_email(new_email.strip(), new_name.strip(), new_key)
                     if ok:
                         st.success(f"✅ Key generated and emailed to {new_email}")
                     else:
-                        st.warning("⚠️ Key generated — email failed (Render free tier limitation). Copy the key above.")
+                        st.warning("⚠️ Key generated — copy it above (email blocked on free Render)")
                 except:
-                    st.warning("⚠️ Key generated — email failed (Render free tier). Copy the key above.")
+                    st.warning("⚠️ Key generated — copy it above (email blocked on free Render)")
             else:
-                st.warning("Enter a customer email.")
+                st.warning("Enter a customer email."))
 
         st.divider()
 
@@ -582,3 +582,4 @@ Set `STRIPE_WEBHOOK_SEC` env variable to the signing secret.
 
 
 st.caption("PRIVATE FOR ANTHONY  ·  SUBSCRIPTION REQUIRED  ·  $29.99/MO  ·  FEB 2026")
+
