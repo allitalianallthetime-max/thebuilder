@@ -1,3 +1,7 @@
+
+
+
+
 import streamlit as st
 import requests
 import os
@@ -19,115 +23,79 @@ FROM_EMAIL         = os.environ.get("FROM_EMAIL",         "The Builder <noreply@
 from builder_styles import BUILDER_CSS, FORGE_HEADER_HTML
 st.markdown(BUILDER_CSS, unsafe_allow_html=True)
 
-# ── Enhanced Visual Layer (app.py only — no other files changed) ──────────────
+# ── Enhanced Visual Layer (app.py only — class-based selectors for reliability) ─
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Rajdhani:wght@400;600;700&family=Share+Tech+Mono&display=swap');
 
 /* ── GLOBAL ATMOSPHERE ─────────────────────────────────────────── */
-html, body, [data-testid="stAppViewContainer"] {
+html, body, .stApp, .main, section.main {
     background-color: #080C12 !important;
 }
 
-[data-testid="stAppViewContainer"]::before {
+/* ── GRID + SCANLINES ──────────────────────────────────────────── */
+.stApp::before {
     content: "";
     position: fixed;
     inset: 0;
     background-image:
-        linear-gradient(rgba(255,107,0,0.025) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,107,0,0.025) 1px, transparent 1px);
+        linear-gradient(rgba(255,107,0,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,107,0,0.03) 1px, transparent 1px);
     background-size: 48px 48px;
     pointer-events: none;
     z-index: 0;
 }
 
-[data-testid="stAppViewContainer"]::after {
-    content: "";
-    position: fixed;
-    inset: 0;
-    background: repeating-linear-gradient(
-        0deg,
-        transparent,
-        transparent 2px,
-        rgba(0,0,0,0.08) 2px,
-        rgba(0,0,0,0.08) 4px
-    );
-    pointer-events: none;
-    z-index: 1;
-}
-
-[data-testid="stMain"] {
-    position: relative;
-    z-index: 2;
-}
-
 /* ── SIDEBAR ───────────────────────────────────────────────────── */
-[data-testid="stSidebar"] {
+section[data-testid="stSidebar"],
+.css-1d391kg, .css-6qob1r {
     background: linear-gradient(180deg, #0A0F18 0%, #080C12 100%) !important;
-    border-right: 1px solid rgba(255,107,0,0.15) !important;
-    box-shadow: 4px 0 32px rgba(0,0,0,0.6) !important;
-}
-
-[data-testid="stSidebar"]::before {
-    content: "";
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 2px;
-    background: linear-gradient(90deg, transparent, #FF6B00, transparent);
-}
-
-[data-testid="stSidebarContent"] {
-    padding-top: 1.5rem !important;
+    border-right: 1px solid rgba(255,107,0,0.18) !important;
+    box-shadow: 4px 0 32px rgba(0,0,0,0.7) !important;
 }
 
 /* ── TABS ──────────────────────────────────────────────────────── */
-[data-testid="stTabs"] {
-    gap: 0 !important;
-}
-
-[data-testid="stTabs"] > div:first-child {
+.stTabs [data-baseweb="tab-list"] {
+    background: rgba(8,12,18,0.95) !important;
     border-bottom: 1px solid rgba(255,107,0,0.2) !important;
     gap: 0 !important;
-    background: rgba(8,12,18,0.9);
-    padding: 0 8px;
+    padding: 0 8px !important;
 }
 
-[data-testid="stTabs"] button {
+.stTabs [data-baseweb="tab"] {
     font-family: 'Share Tech Mono', monospace !important;
     font-size: 0.72rem !important;
     letter-spacing: 2.5px !important;
     text-transform: uppercase !important;
     color: #3A5068 !important;
     background: transparent !important;
-    border: none !important;
     border-bottom: 2px solid transparent !important;
     border-radius: 0 !important;
     padding: 14px 22px !important;
     transition: all 0.2s ease !important;
-    position: relative;
 }
 
-[data-testid="stTabs"] button:hover {
+.stTabs [data-baseweb="tab"]:hover {
     color: #FF8C00 !important;
     background: rgba(255,107,0,0.04) !important;
 }
 
-[data-testid="stTabs"] button[aria-selected="true"] {
+.stTabs [aria-selected="true"] {
     color: #FF6B00 !important;
     border-bottom: 2px solid #FF6B00 !important;
-    background: rgba(255,107,0,0.06) !important;
-    text-shadow: 0 0 12px rgba(255,107,0,0.5);
+    background: rgba(255,107,0,0.07) !important;
+    text-shadow: 0 0 14px rgba(255,107,0,0.5) !important;
 }
 
-[data-testid="stTabsContent"] {
+.stTabs [data-baseweb="tab-panel"] {
     padding-top: 8px !important;
-    border: none !important;
+    background: transparent !important;
 }
 
 /* ── BUTTONS ───────────────────────────────────────────────────── */
-[data-testid="stButton"] > button {
+.stButton > button {
     font-family: 'Share Tech Mono', monospace !important;
-    font-size: 0.75rem !important;
+    font-size: 0.73rem !important;
     letter-spacing: 2px !important;
     text-transform: uppercase !important;
     border-radius: 2px !important;
@@ -135,72 +103,71 @@ html, body, [data-testid="stAppViewContainer"] {
     background: rgba(255,107,0,0.06) !important;
     color: #FF8C00 !important;
     transition: all 0.18s ease !important;
-    box-shadow: inset 0 0 0 0 rgba(255,107,0,0) !important;
+    padding: 10px 16px !important;
 }
 
-[data-testid="stButton"] > button:hover {
+.stButton > button:hover {
     border-color: #FF6B00 !important;
-    background: rgba(255,107,0,0.12) !important;
+    background: rgba(255,107,0,0.13) !important;
     color: #FFB04E !important;
-    box-shadow: 0 0 16px rgba(255,107,0,0.2), inset 0 0 8px rgba(255,107,0,0.05) !important;
-    transform: translateY(-1px);
+    box-shadow: 0 0 18px rgba(255,107,0,0.22), inset 0 0 8px rgba(255,107,0,0.06) !important;
+    transform: translateY(-1px) !important;
 }
 
-[data-testid="stButton"] > button:active {
-    transform: translateY(0px) !important;
+.stButton > button:active {
+    transform: translateY(0) !important;
 }
 
-/* Primary / FORGE IT button */
-[data-testid="stButton"] > button[kind="primary"],
-[data-testid="stButton"] > button[data-testid*="primary"] {
-    background: linear-gradient(135deg, #C45000 0%, #FF6B00 50%, #FF8C35 100%) !important;
+/* Primary / FORGE IT */
+.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #B84400 0%, #FF6B00 55%, #FF9040 100%) !important;
     border: none !important;
     color: #fff !important;
-    font-size: 0.85rem !important;
+    font-size: 0.9rem !important;
     letter-spacing: 3px !important;
     font-weight: 700 !important;
-    text-shadow: 0 1px 4px rgba(0,0,0,0.5) !important;
-    box-shadow: 0 0 0 0 rgba(255,107,0,0.5) !important;
+    text-shadow: 0 1px 6px rgba(0,0,0,0.6) !important;
     animation: forge-pulse 2.8s ease-in-out infinite !important;
-    padding: 18px 12px !important;
-    min-height: 90px !important;
+    min-height: 88px !important;
+    padding: 16px 12px !important;
 }
 
-[data-testid="stButton"] > button[kind="primary"]:hover {
-    background: linear-gradient(135deg, #D45800 0%, #FF7B10 50%, #FFA050 100%) !important;
-    box-shadow: 0 0 28px rgba(255,107,0,0.55), 0 4px 20px rgba(0,0,0,0.4) !important;
+.stButton > button[kind="primary"]:hover {
+    background: linear-gradient(135deg, #C85000 0%, #FF7B10 55%, #FFA060 100%) !important;
+    box-shadow: 0 0 32px rgba(255,107,0,0.6), 0 4px 20px rgba(0,0,0,0.4) !important;
     transform: translateY(-2px) !important;
     animation: none !important;
 }
 
 @keyframes forge-pulse {
-    0%, 100% { box-shadow: 0 0 8px rgba(255,107,0,0.3), 0 2px 12px rgba(0,0,0,0.3); }
-    50%       { box-shadow: 0 0 24px rgba(255,107,0,0.55), 0 2px 16px rgba(0,0,0,0.4); }
+    0%, 100% { box-shadow: 0 0 8px rgba(255,107,0,0.35), 0 2px 14px rgba(0,0,0,0.35); }
+    50%       { box-shadow: 0 0 26px rgba(255,107,0,0.6),  0 2px 18px rgba(0,0,0,0.4); }
 }
 
-/* Download button */
-[data-testid="stDownloadButton"] > button {
+/* Download */
+.stDownloadButton > button {
     font-family: 'Share Tech Mono', monospace !important;
     font-size: 0.72rem !important;
     letter-spacing: 2px !important;
     text-transform: uppercase !important;
     border-radius: 2px !important;
     border: 1px solid rgba(100,200,100,0.3) !important;
-    background: rgba(80,160,80,0.07) !important;
+    background: rgba(60,140,60,0.08) !important;
     color: #7EC87E !important;
     transition: all 0.2s ease !important;
 }
 
-[data-testid="stDownloadButton"] > button:hover {
+.stDownloadButton > button:hover {
     border-color: #7EC87E !important;
-    background: rgba(80,160,80,0.14) !important;
-    box-shadow: 0 0 14px rgba(100,200,100,0.2) !important;
+    background: rgba(60,140,60,0.16) !important;
+    box-shadow: 0 0 16px rgba(100,200,100,0.22) !important;
     transform: translateY(-1px) !important;
 }
 
 /* ── INPUTS ────────────────────────────────────────────────────── */
-[data-testid="stTextInput"] > div > div > input,
-[data-testid="stTextArea"] > div > div > textarea {
+.stTextInput > div > div > input,
+.stTextArea > div > div > textarea,
+.stNumberInput > div > div > input {
     background: #0D1320 !important;
     border: 1px solid rgba(255,107,0,0.18) !important;
     border-radius: 2px !important;
@@ -209,98 +176,120 @@ html, body, [data-testid="stAppViewContainer"] {
     font-size: 1rem !important;
     letter-spacing: 0.5px !important;
     caret-color: #FF6B00 !important;
+    box-shadow: inset 0 2px 8px rgba(0,0,0,0.35) !important;
     transition: border-color 0.2s, box-shadow 0.2s !important;
-    box-shadow: inset 0 2px 8px rgba(0,0,0,0.3) !important;
 }
 
-[data-testid="stTextInput"] > div > div > input:focus,
-[data-testid="stTextArea"] > div > div > textarea:focus {
-    border-color: rgba(255,107,0,0.55) !important;
-    box-shadow: 0 0 0 1px rgba(255,107,0,0.2), inset 0 2px 8px rgba(0,0,0,0.3) !important;
+.stTextInput > div > div > input:focus,
+.stTextArea > div > div > textarea:focus {
+    border-color: rgba(255,107,0,0.5) !important;
+    box-shadow: 0 0 0 2px rgba(255,107,0,0.12), inset 0 2px 8px rgba(0,0,0,0.3) !important;
     outline: none !important;
 }
 
-[data-testid="stTextInput"] label,
-[data-testid="stTextArea"] label,
-[data-testid="stFileUploader"] label,
-[data-testid="stSelectbox"] label,
-[data-testid="stNumberInput"] label {
+/* Input / select labels */
+.stTextInput label,
+.stTextArea label,
+.stSelectbox label,
+.stFileUploader label,
+.stNumberInput label,
+.stRadio label {
     font-family: 'Share Tech Mono', monospace !important;
-    font-size: 0.7rem !important;
+    font-size: 0.68rem !important;
     letter-spacing: 2.5px !important;
     text-transform: uppercase !important;
-    color: #556070 !important;
+    color: #50606E !important;
 }
 
 /* ── SELECTBOX ─────────────────────────────────────────────────── */
-[data-testid="stSelectbox"] > div > div {
+.stSelectbox > div > div {
     background: #0D1320 !important;
     border: 1px solid rgba(255,107,0,0.18) !important;
     border-radius: 2px !important;
     color: #C8D4E8 !important;
     font-family: 'Rajdhani', sans-serif !important;
-    transition: border-color 0.2s !important;
 }
 
-[data-testid="stSelectbox"] > div > div:hover {
+.stSelectbox > div > div:hover {
     border-color: rgba(255,107,0,0.4) !important;
 }
 
 /* ── FILE UPLOADER ─────────────────────────────────────────────── */
-[data-testid="stFileUploader"] > section {
+.stFileUploader > section,
+.stFileUploaderDropzone {
     background: rgba(13,19,32,0.7) !important;
-    border: 1px dashed rgba(255,107,0,0.2) !important;
+    border: 1px dashed rgba(255,107,0,0.22) !important;
     border-radius: 3px !important;
-    transition: border-color 0.2s, background 0.2s !important;
+    transition: all 0.2s !important;
 }
 
-[data-testid="stFileUploader"] > section:hover {
+.stFileUploader > section:hover {
     background: rgba(255,107,0,0.04) !important;
-    border-color: rgba(255,107,0,0.4) !important;
+    border-color: rgba(255,107,0,0.45) !important;
 }
 
-/* ── EXPANDERS (history) ───────────────────────────────────────── */
-[data-testid="stExpander"] {
+/* ── EXPANDERS ─────────────────────────────────────────────────── */
+.streamlit-expanderHeader {
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 0.76rem !important;
+    letter-spacing: 2px !important;
+    text-transform: uppercase !important;
+    color: #6A7A8A !important;
     background: #0D1320 !important;
     border: 1px solid rgba(255,107,0,0.12) !important;
     border-radius: 2px !important;
-    margin-bottom: 6px !important;
-    transition: border-color 0.2s !important;
+    transition: all 0.2s !important;
 }
 
-[data-testid="stExpander"]:hover {
-    border-color: rgba(255,107,0,0.28) !important;
+.streamlit-expanderHeader:hover {
+    color: #FF8C00 !important;
+    border-color: rgba(255,107,0,0.3) !important;
+    background: rgba(255,107,0,0.04) !important;
 }
 
-[data-testid="stExpander"] summary {
-    font-family: 'Share Tech Mono', monospace !important;
-    font-size: 0.78rem !important;
-    letter-spacing: 2px !important;
-    text-transform: uppercase !important;
-    color: #7A8BA0 !important;
-    padding: 12px 16px !important;
+.streamlit-expanderContent {
+    background: rgba(10,15,25,0.8) !important;
+    border: 1px solid rgba(255,107,0,0.1) !important;
+    border-top: none !important;
+    border-radius: 0 0 2px 2px !important;
 }
 
-[data-testid="stExpander"] summary:hover {
+/* ── CODE & MARKDOWN ───────────────────────────────────────────── */
+.stMarkdown strong {
     color: #FF8C00 !important;
 }
 
-[data-testid="stExpander"] svg {
-    fill: rgba(255,107,0,0.5) !important;
-}
-
-/* ── SPINNER ───────────────────────────────────────────────────── */
-[data-testid="stSpinner"] > div {
-    border-top-color: #FF6B00 !important;
-}
-
-/* ── ALERTS / INFO ─────────────────────────────────────────────── */
-[data-testid="stAlert"] {
+.stMarkdown code, code {
+    background: rgba(255,107,0,0.09) !important;
+    border: 1px solid rgba(255,107,0,0.18) !important;
+    color: #FFB060 !important;
     border-radius: 2px !important;
-    border-left-width: 3px !important;
+    font-family: 'Share Tech Mono', monospace !important;
+    padding: 1px 6px !important;
+}
+
+pre {
+    background: #080E1A !important;
+    border: 1px solid rgba(255,107,0,0.22) !important;
+    border-left: 3px solid #FF6B00 !important;
+    border-radius: 0 3px 3px 0 !important;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.45) !important;
+}
+
+pre code {
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    color: #9BCFFF !important;
+}
+
+/* ── ALERTS ────────────────────────────────────────────────────── */
+.stAlert, .stSuccess, .stWarning, .stError, .stInfo {
+    border-radius: 2px !important;
     font-family: 'Rajdhani', sans-serif !important;
     font-size: 0.95rem !important;
-    letter-spacing: 0.5px !important;
+    letter-spacing: 0.4px !important;
+    border-left-width: 3px !important;
 }
 
 /* ── DIVIDER ───────────────────────────────────────────────────── */
@@ -312,98 +301,32 @@ hr {
 /* ── SCROLLBAR ─────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: #080C12; }
-::-webkit-scrollbar-thumb { background: rgba(255,107,0,0.25); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,107,0,0.5); }
-
-/* ── MARKDOWN OUTPUT ───────────────────────────────────────────── */
-[data-testid="stMarkdownContainer"] strong {
-    color: #FF8C00 !important;
-    letter-spacing: 1px;
-}
-
-[data-testid="stMarkdownContainer"] code {
-    background: rgba(255,107,0,0.08) !important;
-    border: 1px solid rgba(255,107,0,0.15) !important;
-    color: #FFB060 !important;
-    border-radius: 2px !important;
-    font-family: 'Share Tech Mono', monospace !important;
-    padding: 1px 6px !important;
-}
-
-[data-testid="stMarkdownContainer"] pre {
-    background: #0A0F1A !important;
-    border: 1px solid rgba(255,107,0,0.2) !important;
-    border-left: 3px solid #FF6B00 !important;
-    border-radius: 0 3px 3px 0 !important;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.4) !important;
-}
-
-[data-testid="stMarkdownContainer"] pre code {
-    background: transparent !important;
-    border: none !important;
-    padding: 0 !important;
-    color: #9BCFFF !important;
-}
-
-/* ── RADIO (sidebar) ───────────────────────────────────────────── */
-[data-testid="stRadio"] label {
-    font-family: 'Share Tech Mono', monospace !important;
-    font-size: 0.72rem !important;
-    letter-spacing: 2px !important;
-    color: #7A8BA0 !important;
-    text-transform: uppercase !important;
-}
-
-[data-testid="stRadio"] > div {
-    gap: 4px !important;
-}
+::-webkit-scrollbar-thumb { background: rgba(255,107,0,0.28); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,107,0,0.55); }
 
 /* ── CAPTION ───────────────────────────────────────────────────── */
-[data-testid="stCaptionContainer"] {
+.stCaptionContainer, .stCaption {
     font-family: 'Share Tech Mono', monospace !important;
-    font-size: 0.65rem !important;
+    font-size: 0.64rem !important;
     letter-spacing: 3px !important;
-    color: rgba(58,74,92,0.7) !important;
+    color: rgba(58,74,92,0.6) !important;
     text-align: center !important;
     text-transform: uppercase !important;
-    border-top: 1px solid rgba(255,107,0,0.06) !important;
+    border-top: 1px solid rgba(255,107,0,0.07) !important;
     padding-top: 12px !important;
-    margin-top: 24px !important;
+    margin-top: 20px !important;
 }
 
-/* ── NUMBER INPUT ──────────────────────────────────────────────── */
-[data-testid="stNumberInput"] input {
-    background: #0D1320 !important;
-    border: 1px solid rgba(255,107,0,0.18) !important;
-    border-radius: 2px !important;
-    color: #C8D4E8 !important;
-    font-family: 'Share Tech Mono', monospace !important;
-}
-
-/* ── TOAST / SUCCESS / WARNING ─────────────────────────────────── */
-[data-testid="stSuccess"],
-[data-testid="stWarning"],
-[data-testid="stError"] {
-    border-radius: 2px !important;
-    font-family: 'Rajdhani', sans-serif !important;
-    letter-spacing: 0.5px !important;
-}
-
-/* ── MAIN CONTENT AREA PADDING ─────────────────────────────────── */
-[data-testid="stMainBlockContainer"] {
+/* ── MAIN BLOCK PADDING ────────────────────────────────────────── */
+.block-container {
     padding-top: 1rem !important;
     max-width: 1400px !important;
 }
 
-/* ── HEADER AREA TOP STRIPE ────────────────────────────────────── */
-[data-testid="stHeader"] {
-    background: transparent !important;
-}
-
-/* ── KEY BOX (admin) ───────────────────────────────────────────── */
+/* ── KEY BOX (post-payment + admin) ────────────────────────────── */
 .key-box {
     background: linear-gradient(135deg, #0D1320, #111928) !important;
-    border: 1px solid rgba(255,107,0,0.4) !important;
+    border: 1px solid rgba(255,107,0,0.45) !important;
     border-radius: 3px !important;
     padding: 16px 24px !important;
     font-family: 'Share Tech Mono', monospace !important;
@@ -411,92 +334,110 @@ hr {
     letter-spacing: 4px !important;
     color: #FF8C00 !important;
     text-align: center !important;
-    box-shadow: 0 0 24px rgba(255,107,0,0.15), inset 0 2px 8px rgba(0,0,0,0.3) !important;
+    box-shadow: 0 0 28px rgba(255,107,0,0.15), inset 0 2px 8px rgba(0,0,0,0.3) !important;
     margin: 12px 0 !important;
     user-select: all !important;
+    cursor: text !important;
+}
+
+/* ── POST-PAYMENT KEY REVEAL BANNER ───────────────────────────── */
+.new-key-banner {
+    background: linear-gradient(135deg, rgba(255,107,0,0.12), rgba(200,68,0,0.08));
+    border: 2px solid rgba(255,107,0,0.6);
+    border-radius: 4px;
+    padding: 28px 32px;
+    margin: 0 0 24px 0;
+    text-align: center;
+    animation: key-reveal 0.5s ease-out, key-glow 3s ease-in-out 0.5s infinite;
+    box-shadow: 0 0 40px rgba(255,107,0,0.2);
+}
+
+@keyframes key-reveal {
+    from { opacity: 0; transform: translateY(-12px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes key-glow {
+    0%, 100% { box-shadow: 0 0 20px rgba(255,107,0,0.15); }
+    50%       { box-shadow: 0 0 45px rgba(255,107,0,0.35); }
 }
 
 /* ── ADMIN ROW ─────────────────────────────────────────────────── */
 .admin-row {
-    background: rgba(13,19,32,0.7) !important;
-    border: 1px solid rgba(255,107,0,0.1) !important;
-    border-radius: 2px !important;
-    padding: 12px 16px !important;
-    margin-bottom: 6px !important;
-    font-family: 'Share Tech Mono', monospace !important;
-    font-size: 0.8rem !important;
-    transition: border-color 0.2s !important;
-    line-height: 1.8 !important;
+    background: rgba(13,19,32,0.7);
+    border: 1px solid rgba(255,107,0,0.1);
+    border-radius: 2px;
+    padding: 12px 16px;
+    margin-bottom: 6px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.8rem;
+    transition: all 0.18s ease;
+    line-height: 1.8;
 }
 
 .admin-row:hover {
-    border-color: rgba(255,107,0,0.25) !important;
-    background: rgba(255,107,0,0.03) !important;
+    border-color: rgba(255,107,0,0.26);
+    background: rgba(255,107,0,0.03);
 }
 
 /* ── WARNING / DANGER BANNERS ──────────────────────────────────── */
 .warning-banner {
-    background: linear-gradient(135deg, rgba(255,107,0,0.08), rgba(255,107,0,0.04)) !important;
-    border: 1px solid rgba(255,107,0,0.35) !important;
-    border-left: 4px solid #FF6B00 !important;
-    border-radius: 0 3px 3px 0 !important;
-    padding: 14px 20px !important;
-    margin-bottom: 16px !important;
-    font-family: 'Rajdhani', sans-serif !important;
-    color: #FFB060 !important;
-    font-size: 0.95rem !important;
-    letter-spacing: 0.5px !important;
-    box-shadow: 0 2px 12px rgba(255,107,0,0.1) !important;
+    background: linear-gradient(135deg, rgba(255,107,0,0.08), rgba(255,107,0,0.04));
+    border: 1px solid rgba(255,107,0,0.38);
+    border-left: 4px solid #FF6B00;
+    border-radius: 0 3px 3px 0;
+    padding: 14px 20px;
+    margin-bottom: 16px;
+    font-family: 'Rajdhani', sans-serif;
+    color: #FFB060;
+    font-size: 0.95rem;
+    letter-spacing: 0.5px;
+    box-shadow: 0 2px 12px rgba(255,107,0,0.1);
 }
 
 .danger-banner {
-    background: linear-gradient(135deg, rgba(255,75,75,0.1), rgba(255,75,75,0.05)) !important;
-    border: 1px solid rgba(255,75,75,0.4) !important;
-    border-left: 4px solid #FF4B4B !important;
-    border-radius: 0 3px 3px 0 !important;
-    padding: 14px 20px !important;
-    margin-bottom: 16px !important;
-    font-family: 'Rajdhani', sans-serif !important;
-    color: #FF9090 !important;
-    font-size: 0.95rem !important;
-    letter-spacing: 0.5px !important;
-    animation: danger-flash 2s ease-in-out infinite !important;
+    background: linear-gradient(135deg, rgba(255,75,75,0.1), rgba(255,75,75,0.05));
+    border: 1px solid rgba(255,75,75,0.4);
+    border-left: 4px solid #FF4B4B;
+    border-radius: 0 3px 3px 0;
+    padding: 14px 20px;
+    margin-bottom: 16px;
+    font-family: 'Rajdhani', sans-serif;
+    color: #FF9090;
+    font-size: 0.95rem;
+    letter-spacing: 0.5px;
+    animation: danger-flash 2s ease-in-out infinite;
 }
 
 @keyframes danger-flash {
     0%, 100% { box-shadow: 0 2px 12px rgba(255,75,75,0.1); }
-    50%       { box-shadow: 0 2px 20px rgba(255,75,75,0.25); }
+    50%       { box-shadow: 0 2px 22px rgba(255,75,75,0.28); }
 }
 
 /* ── STRIPE BUTTON ─────────────────────────────────────────────── */
 .stripe-btn {
-    display: block !important;
-    background: linear-gradient(135deg, #C45000, #FF6B00) !important;
-    color: #fff !important;
-    text-align: center !important;
-    padding: 13px 20px !important;
-    border-radius: 2px !important;
-    font-family: 'Share Tech Mono', monospace !important;
-    font-size: 0.8rem !important;
-    letter-spacing: 2.5px !important;
-    text-decoration: none !important;
-    text-transform: uppercase !important;
-    margin-top: 10px !important;
-    transition: all 0.2s ease !important;
-    box-shadow: 0 4px 16px rgba(255,107,0,0.3) !important;
+    display: block;
+    background: linear-gradient(135deg, #B84400, #FF6B00);
+    color: #fff;
+    text-align: center;
+    padding: 13px 20px;
+    border-radius: 2px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.78rem;
+    letter-spacing: 2.5px;
+    text-decoration: none;
+    text-transform: uppercase;
+    margin-top: 10px;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 16px rgba(255,107,0,0.28);
 }
 
 .stripe-btn:hover {
-    background: linear-gradient(135deg, #D45800, #FF7B10) !important;
-    box-shadow: 0 6px 24px rgba(255,107,0,0.45) !important;
-    transform: translateY(-1px) !important;
-    text-decoration: none !important;
-    color: #fff !important;
-}
-
-/* ── IMAGE ─────────────────────────────────────────────────────── */
-[data-testid="stImage"] img {
-    filter: brightness(0.95) contrast(1.05) !important;
+    background: linear-gradient(135deg, #C85200, #FF7B10);
+    box-shadow: 0 6px 24px rgba(255,107,0,0.48);
+    transform: translateY(-1px);
+    text-decoration: none;
+    color: #fff;
 }
 
 </style>
@@ -601,6 +542,36 @@ defaults = {
 for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  POST-PAYMENT KEY REVEAL
+#  Stripe webhook redirects to: APP_URL?key=BLDR-XXXX-XXXX-XXXX
+#  The app detects it here and shows a hard-to-miss banner.
+# ══════════════════════════════════════════════════════════════════════════════
+try:
+    _new_key = st.query_params.get("key", "")
+except Exception:
+    _new_key = ""
+
+if _new_key:
+    st.markdown(f"""
+<div class="new-key-banner">
+    <div style="font-family:'Share Tech Mono',monospace;color:#FF6B00;
+                font-size:0.7rem;letter-spacing:4px;margin-bottom:10px;">
+        ✅ &nbsp; PAYMENT CONFIRMED — YOUR LICENSE KEY
+    </div>
+    <div class="key-box" style="font-size:1.35rem;margin:0 auto;max-width:480px;">
+        {_new_key}
+    </div>
+    <div style="font-family:'Rajdhani',sans-serif;color:#7A8BA0;
+                font-size:0.9rem;letter-spacing:1px;margin-top:14px;line-height:1.7;">
+        📋 &nbsp; <strong style="color:#C8D4E8;">Copy this key now.</strong>
+        &nbsp; Paste it in the sidebar to unlock The Builder.<br/>
+        A confirmation email is also on its way to you.
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1138,6 +1109,3 @@ Set `STRIPE_WEBHOOK_SEC` env variable to the signing secret.
 
 
 st.caption("PRIVATE FOR ANTHONY  ·  SUBSCRIPTION REQUIRED  ·  $29.99/MO  ·  FEB 2026")
-
-
-
