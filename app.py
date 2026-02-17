@@ -580,30 +580,30 @@ if st.session_state.is_admin and tab_admin is not None:
     ── GENERATE LICENSE KEY ──────────────────────────
 </div>
 """, unsafe_allow_html=True)
+
         col_n, col_e = st.columns(2)
         with col_n:
-            new_name  = st.text_input("CUSTOMER NAME")
+            new_name = st.text_input("CUSTOMER NAME")
         with col_e:
             new_email = st.text_input("CUSTOMER EMAIL")
 
-                if st.button("⚡ GENERATE & EMAIL KEY"):
+        if st.button("⚡ GENERATE & EMAIL KEY"):
             if new_email.strip():
                 new_key = create_license(new_email.strip(), new_name.strip())
                 
-                # ALWAYS show the key on screen
+                # ALWAYS show key on screen (works on free tier)
                 st.markdown(f"<div class='key-box'>{new_key}</div>", unsafe_allow_html=True)
                 
-                # Try email (fails silently on free tier)
                 try:
                     ok = send_welcome_email(new_email.strip(), new_name.strip(), new_key)
                     if ok:
                         st.success(f"✅ Key generated and emailed to {new_email}")
                     else:
-                        st.warning("⚠️ Key generated — copy it above (email blocked on free Render)")
+                        st.warning("⚠️ Key generated — copy it above (email blocked on free tier)")
                 except:
-                    st.warning("⚠️ Key generated — copy it above (email blocked on free Render)")
+                    st.warning("⚠️ Key generated — copy it above (email blocked on free tier)")
             else:
-                st.warning("Enter a customer email."))
+                st.warning("Enter a customer email.")
 
         st.divider()
 
@@ -614,6 +614,7 @@ if st.session_state.is_admin and tab_admin is not None:
     ── MANAGE A KEY ──────────────────────────────────
 </div>
 """, unsafe_allow_html=True)
+
         manage_key = st.text_input("LICENSE KEY TO MANAGE")
         col_m1, col_m2, col_m3 = st.columns(3)
         with col_m1:
@@ -650,13 +651,14 @@ if st.session_state.is_admin and tab_admin is not None:
     ── ALL LICENSE HOLDERS ───────────────────────────
 </div>
 """, unsafe_allow_html=True)
+
         all_licenses = get_all_licenses()
         now = datetime.utcnow()
         if all_licenses:
             for lic in all_licenses:
-                exp_dt    = datetime.fromisoformat(lic["expires_at"])
+                exp_dt = datetime.fromisoformat(lic["expires_at"])
                 days_left = (exp_dt - now).days
-                color     = "#4CAF50" if days_left > 10 else "#FF8C00" if days_left > 0 else "#FF4B4B"
+                color = "#4CAF50" if days_left > 10 else "#FF8C00" if days_left > 0 else "#FF4B4B"
                 st.markdown(f"""
 <div class='admin-row'>
     <strong style="color:#C8D4E8;">{lic['name'] or '(no name)'}</strong>
@@ -682,7 +684,7 @@ if st.session_state.is_admin and tab_admin is not None:
 
         st.divider()
 
-        # Manual lifecycle
+        # Lifecycle + Webhook
         st.markdown("""
 <div style="font-family:'Share Tech Mono',monospace;color:#FF6B00;
             letter-spacing:3px;font-size:0.8rem;margin-bottom:12px;">
@@ -697,22 +699,17 @@ if st.session_state.is_admin and tab_admin is not None:
 
         st.divider()
 
-        # Stripe info
         st.markdown("""
 <div style="font-family:'Share Tech Mono',monospace;color:#FF6B00;
             letter-spacing:3px;font-size:0.8rem;margin-bottom:12px;">
     ── STRIPE WEBHOOK ────────────────────────────────
 </div>
 """, unsafe_allow_html=True)
-        st.code(f"POST {APP_URL}/stripe-webhook", language="")
+        st.code("POST https://thebuilder-webhook.onrender.com/stripe-webhook", language="")
         st.markdown("""
 Set this URL in **Stripe → Developers → Webhooks → Add endpoint**.
 Listen for `checkout.session.completed`.
 Set `STRIPE_WEBHOOK_SEC` env variable to the signing secret.
 """)
 
-
-
-st.caption("PRIVATE FOR ANTHONY  ·  SUBSCRIPTION REQUIRED  ·  $29.99/MO  ·  FEB 2026")
-
-
+st.caption("PRIVATE FOR ANTHONY · SUBSCRIPTION REQUIRED · $29.99/MO · FEB 2026")
