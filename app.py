@@ -713,3 +713,4 @@ Set `STRIPE_WEBHOOK_SEC` env variable to the signing secret.
 """)
 
 st.caption("PRIVATE FOR ANTHONY · SUBSCRIPTION REQUIRED · $29.99/MO · FEB 2026")
+
