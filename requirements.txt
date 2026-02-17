@@ -1,2 +1,5 @@
 streamlit>=1.42.0
 requests
+stripe
+fastapi
+uvicorn[standard]
