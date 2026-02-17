@@ -573,4 +573,146 @@ if st.session_state.is_admin and tab_admin is not None:
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("### ⚙️ ADMIN PANEL")
 
-      
+        # Generate key
+        st.markdown("""
+<div style="font-family:'Share Tech Mono',monospace;color:#FF6B00;
+            letter-spacing:3px;font-size:0.8rem;margin-bottom:12px;">
+    ── GENERATE LICENSE KEY ──────────────────────────
+</div>
+""", unsafe_allow_html=True)
+        col_n, col_e = st.columns(2)
+        with col_n:
+            new_name  = st.text_input("CUSTOMER NAME")
+        with col_e:
+            new_email = st.text_input("CUSTOMER EMAIL")
+
+                if st.button("⚡ GENERATE & EMAIL KEY"):
+            if new_email.strip():
+                new_key = create_license(new_email.strip(), new_name.strip())
+                
+                # ALWAYS show the key on screen
+                st.markdown(f"<div class='key-box'>{new_key}</div>", unsafe_allow_html=True)
+                
+                # Try email (fails silently on free tier)
+                try:
+                    ok = send_welcome_email(new_email.strip(), new_name.strip(), new_key)
+                    if ok:
+                        st.success(f"✅ Key generated and emailed to {new_email}")
+                    else:
+                        st.warning("⚠️ Key generated — copy it above (email blocked on free Render)")
+                except:
+                    st.warning("⚠️ Key generated — copy it above (email blocked on free Render)")
+            else:
+                st.warning("Enter a customer email."))
+
+        st.divider()
+
+        # Manage key
+        st.markdown("""
+<div style="font-family:'Share Tech Mono',monospace;color:#FF6B00;
+            letter-spacing:3px;font-size:0.8rem;margin-bottom:12px;">
+    ── MANAGE A KEY ──────────────────────────────────
+</div>
+""", unsafe_allow_html=True)
+        manage_key = st.text_input("LICENSE KEY TO MANAGE")
+        col_m1, col_m2, col_m3 = st.columns(3)
+        with col_m1:
+            ext_days = st.number_input("EXTEND BY (DAYS)", min_value=1, max_value=365, value=30)
+            if st.button("✅ EXTEND LICENSE", use_container_width=True):
+                if manage_key.strip():
+                    ok = extend_license(manage_key.strip(), int(ext_days))
+                    st.success("Extended!") if ok else st.error("Key not found.")
+                else:
+                    st.warning("Enter a key.")
+        with col_m2:
+            rev_reason = st.text_input("REVOKE REASON")
+            if st.button("🚫 REVOKE LICENSE", use_container_width=True):
+                if manage_key.strip():
+                    ok = revoke_license(manage_key.strip(), rev_reason)
+                    st.success("Revoked.") if ok else st.error("Key not found.")
+                else:
+                    st.warning("Enter a key.")
+        with col_m3:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("🗑️ DELETE USER DATA", use_container_width=True):
+                if manage_key.strip():
+                    delete_user_data(manage_key.strip())
+                    st.success("User data deleted.")
+                else:
+                    st.warning("Enter a key.")
+
+        st.divider()
+
+        # All users
+        st.markdown("""
+<div style="font-family:'Share Tech Mono',monospace;color:#FF6B00;
+            letter-spacing:3px;font-size:0.8rem;margin-bottom:12px;">
+    ── ALL LICENSE HOLDERS ───────────────────────────
+</div>
+""", unsafe_allow_html=True)
+        all_licenses = get_all_licenses()
+        now = datetime.utcnow()
+        if all_licenses:
+            for lic in all_licenses:
+                exp_dt    = datetime.fromisoformat(lic["expires_at"])
+                days_left = (exp_dt - now).days
+                color     = "#4CAF50" if days_left > 10 else "#FF8C00" if days_left > 0 else "#FF4B4B"
+                st.markdown(f"""
+<div class='admin-row'>
+    <strong style="color:#C8D4E8;">{lic['name'] or '(no name)'}</strong>
+    <span style="color:#3A4A5C;"> — </span>
+    <span style="color:#7A8BA0;">{lic['email']}</span><br/>
+    <span style="color:#3A4A5C;font-size:0.8rem;font-family:'Share Tech Mono',monospace;">
+        KEY:
+    </span>
+    <code>{lic['key_plain']}</code>
+    <span style="color:#3A4A5C;"> &nbsp;|&nbsp; </span>
+    <span style="color:{color};font-weight:700;font-size:0.85rem;letter-spacing:1px;">
+        {lic['status'].upper()}
+    </span>
+    <span style="color:#3A4A5C;"> &nbsp;|&nbsp; </span>
+    <span style="color:#7A8BA0;">Expires {lic['expires_at'][:10]} ({days_left}d)</span>
+    <span style="color:#3A4A5C;"> &nbsp;|&nbsp; </span>
+    <span style="color:#3A4A5C;font-size:0.85rem;">Created {lic['created_at'][:10]}</span>
+    {f'<br/><em style="color:#5A6A7C;">{lic["notes"]}</em>' if lic['notes'] else ''}
+</div>
+""", unsafe_allow_html=True)
+        else:
+            st.info("No license holders yet.")
+
+        st.divider()
+
+        # Manual lifecycle
+        st.markdown("""
+<div style="font-family:'Share Tech Mono',monospace;color:#FF6B00;
+            letter-spacing:3px;font-size:0.8rem;margin-bottom:12px;">
+    ── LIFECYCLE ─────────────────────────────────────
+</div>
+""", unsafe_allow_html=True)
+        st.write("Normally runs every 24h. Force it now:")
+        if st.button("🔄 RUN LIFECYCLE CHECK NOW"):
+            with st.spinner("Checking all licenses..."):
+                run_daily_lifecycle(STRIPE_PAYMENT_URL)
+            st.success("Done. Warning emails sent where needed.")
+
+        st.divider()
+
+        # Stripe info
+        st.markdown("""
+<div style="font-family:'Share Tech Mono',monospace;color:#FF6B00;
+            letter-spacing:3px;font-size:0.8rem;margin-bottom:12px;">
+    ── STRIPE WEBHOOK ────────────────────────────────
+</div>
+""", unsafe_allow_html=True)
+        st.code(f"POST {APP_URL}/stripe-webhook", language="")
+        st.markdown("""
+Set this URL in **Stripe → Developers → Webhooks → Add endpoint**.
+Listen for `checkout.session.completed`.
+Set `STRIPE_WEBHOOK_SEC` env variable to the signing secret.
+""")
+
+
+
+st.caption("PRIVATE FOR ANTHONY  ·  SUBSCRIPTION REQUIRED  ·  $29.99/MO  ·  FEB 2026")
+
+
