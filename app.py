@@ -12,6 +12,8 @@ MASTER_KEY         = os.environ.get("MASTER_KEY",         "AoC3P01216")
 GROQ_API_KEY       = os.environ.get("GROQ_API_KEY",       "")
 STRIPE_PAYMENT_URL = os.environ.get("STRIPE_PAYMENT_URL", "https://buy.stripe.com/dRm3cvfdb3655831rX1RC00")
 APP_URL            = os.environ.get("APP_URL",            "")
+RESEND_API_KEY     = os.environ.get("RESEND_API_KEY",     "")
+FROM_EMAIL         = os.environ.get("FROM_EMAIL",         "The Builder <noreply@yourdomain.com>")
 
 # ── Styles ─────────────────────────────────────────────────────────────────────
 from builder_styles import BUILDER_CSS, FORGE_HEADER_HTML
@@ -21,9 +23,56 @@ st.markdown(BUILDER_CSS, unsafe_allow_html=True)
 from key_manager import (
     init_db, create_license, validate_key, revoke_license,
     extend_license, get_all_licenses, save_build_entry,
-    get_build_history, delete_user_data, send_welcome_email,
+    get_build_history, delete_user_data,
     run_daily_lifecycle
 )
+
+
+# ── Email via Resend (HTTP — works on Render free tier) ───────────────────────
+def send_welcome_email(to_email: str, name: str, license_key: str) -> bool:
+    """Send license key email using Resend API (no SMTP needed)."""
+    if not RESEND_API_KEY:
+        return False
+    body_html = f"""
+    <div style="font-family:monospace;background:#0D1117;color:#C8D4E8;
+                padding:32px;border-radius:8px;max-width:560px;margin:auto;">
+        <h2 style="color:#FF6B00;letter-spacing:3px;margin-top:0;">
+            🔨 THE BUILDER — LICENSE KEY
+        </h2>
+        <p>Hey {name or 'Boss'},</p>
+        <p>Your license key is ready. Paste it into the sidebar to unlock The Builder.</p>
+        <div style="background:#1C2333;border:1px solid #FF6B00;border-radius:4px;
+                    padding:18px;font-size:1.3rem;letter-spacing:4px;color:#FF8C00;
+                    text-align:center;margin:24px 0;">
+            {license_key}
+        </div>
+        <p style="color:#7A8BA0;font-size:0.85rem;line-height:1.7;">
+            Subscription renews monthly at $29.99.<br/>
+            Reply to this email with any questions.
+        </p>
+        <p style="color:#FF6B00;margin-bottom:0;">Anthony, what's next boss?</p>
+    </div>
+    """
+    try:
+        resp = requests.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type":  "application/json",
+            },
+            json={
+                "from":    FROM_EMAIL,
+                "to":      [to_email],
+                "subject": "🔨 Your Builder License Key",
+                "html":    body_html,
+            },
+            timeout=10,
+        )
+        return resp.status_code in (200, 201)
+    except Exception as e:
+        print(f"[EMAIL ERROR] {e}")
+        return False
+
 
 # ── Background lifecycle scheduler ────────────────────────────────────────────
 def _start_scheduler():
@@ -40,6 +89,7 @@ if "scheduler_started" not in st.session_state:
     st.session_state.scheduler_started = True
 
 init_db()
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  HEADER
@@ -87,12 +137,16 @@ if sidebar_mode == "🛒 Buy Access ($29.99/mo)":
 Your license key is emailed to you instantly after payment.
 """)
     st.sidebar.markdown(
-        f'<a href="{STRIPE_PAYMENT_URL}" target="_blank" class="stripe-btn">🔨 &nbsp; SUBSCRIBE — $29.99/MO</a>',
+        f'<a href="{STRIPE_PAYMENT_URL}" target="_blank" class="stripe-btn">'
+        f'🔨 &nbsp; SUBSCRIBE — $29.99/MO</a>',
         unsafe_allow_html=True
     )
 else:
-    access_input = st.sidebar.text_input("License key or master key", type="password",
-                                          placeholder="BLDR-XXXX-XXXX-XXXX")
+    access_input = st.sidebar.text_input(
+        "License key or master key",
+        type="password",
+        placeholder="BLDR-XXXX-XXXX-XXXX"
+    )
     if st.sidebar.button("⚡ UNLOCK THE BUILDER", use_container_width=True):
         if access_input == MASTER_KEY:
             st.session_state.authenticated = True
@@ -106,7 +160,9 @@ else:
                 st.session_state.license_info  = result
                 st.session_state.active_key    = access_input
                 name_str = f", {result['name']}" if result.get("name") else ""
-                st.sidebar.success(f"✅ Welcome back{name_str}!\n{result['days_remaining']} days remaining.")
+                st.sidebar.success(
+                    f"✅ Welcome back{name_str}!\n{result['days_remaining']} days remaining."
+                )
             else:
                 msgs = {
                     "not_found": "Key not found. Check your email.",
@@ -115,22 +171,27 @@ else:
                 }
                 st.sidebar.error(msgs.get(result["status"], "Invalid key."))
                 st.sidebar.markdown(
-                    f'<a href="{STRIPE_PAYMENT_URL}" target="_blank" class="stripe-btn">🔨 RENEW — $29.99/MO</a>',
+                    f'<a href="{STRIPE_PAYMENT_URL}" target="_blank" class="stripe-btn">'
+                    f'🔨 RENEW — $29.99/MO</a>',
                     unsafe_allow_html=True
                 )
 
     # Show current user info if logged in
     if st.session_state.authenticated and not st.session_state.is_admin and st.session_state.license_info:
-        info = st.session_state.license_info
-        d    = info.get("days_remaining", 0)
+        info  = st.session_state.license_info
+        d     = info.get("days_remaining", 0)
         color = "#4CAF50" if d > 10 else "#FF6B00" if d > 0 else "#FF4B4B"
         st.sidebar.markdown(f"""
 <div style="background:rgba(255,107,0,0.05);border:1px solid rgba(255,107,0,0.2);
             border-radius:3px;padding:12px;margin-top:16px;
             font-family:'Rajdhani',sans-serif;">
-    <div style="color:#888;font-size:0.75rem;letter-spacing:2px;text-transform:uppercase;">Active License</div>
+    <div style="color:#888;font-size:0.75rem;letter-spacing:2px;text-transform:uppercase;">
+        Active License
+    </div>
     <div style="color:#C8D4E8;font-size:0.9rem;margin-top:4px;">{info.get('email','')}</div>
-    <div style="color:{color};font-weight:700;font-size:1.1rem;margin-top:4px;">{d} DAYS REMAINING</div>
+    <div style="color:{color};font-weight:700;font-size:1.1rem;margin-top:4px;">
+        {d} DAYS REMAINING
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -217,7 +278,10 @@ if not st.session_state.is_admin and st.session_state.license_info:
 #  GROQ FUNCTION
 # ══════════════════════════════════════════════════════════════════════════════
 def ask_the_builder(junk_desc, project_type, image_desc="", history_entries=None):
-    history_str = "\n".join([e["entry"] for e in (history_entries or [])][-10:]) or "No previous builds yet."
+    history_str = (
+        "\n".join([e["entry"] for e in (history_entries or [])][-10:])
+        or "No previous builds yet."
+    )
     system_prompt = f"""
 You are The Builder — Anthony's gritty, no-BS self-taught garage AI that turns junk into real functional battlefield robots.
 
@@ -242,7 +306,10 @@ End every response with: "Anthony, what's next boss?"
     try:
         resp = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+            headers={
+                "Authorization": f"Bearer {GROQ_API_KEY}",
+                "Content-Type":  "application/json"
+            },
             json={
                 "model": "llama-3.3-70b-versatile",
                 "messages": [
@@ -250,7 +317,7 @@ End every response with: "Anthony, what's next boss?"
                     {"role": "user",   "content": junk_desc}
                 ],
                 "temperature": 0.72,
-                "max_tokens": 1800
+                "max_tokens":  1800
             }
         ).json()
         if "error" in resp:
@@ -289,12 +356,14 @@ with tab1:
             placeholder="Old Ryobi 40V battery, Craftsman lawnmower motor & wheels, 2x4s, zip ties, PVC pipe...",
             height=130
         )
-        uploaded_file = st.file_uploader("UPLOAD PHOTO (OPTIONAL)", type=["png","jpg","jpeg"])
+        uploaded_file = st.file_uploader("UPLOAD PHOTO (OPTIONAL)", type=["png", "jpg", "jpeg"])
         image_desc = ""
         if uploaded_file:
             st.image(uploaded_file, width=300)
-            image_desc = st.text_input("PHOTO DESCRIPTION",
-                                        placeholder="Rusty lawnmower engine with 4 wheels attached")
+            image_desc = st.text_input(
+                "PHOTO DESCRIPTION",
+                placeholder="Rusty lawnmower engine with 4 wheels attached"
+            )
 
         col_a, col_b = st.columns(2)
         with col_a:
@@ -310,7 +379,6 @@ with tab1:
                 st.session_state.last_result   = None
                 st.success("New project started — blueprint reset.")
 
-        # Parts counter
         if st.session_state.current_parts:
             st.markdown(f"""
 <div style="background:rgba(255,107,0,0.06);border:1px solid rgba(255,107,0,0.2);
@@ -337,9 +405,11 @@ with tab1:
                     result = ask_the_builder(junk, project_type, image_desc, history)
                     st.session_state.last_result = result
                     if st.session_state.active_key:
-                        ts    = datetime.now().strftime("%b %d %H:%M")
-                        save_build_entry(st.session_state.active_key,
-                                         f"[{ts}] {project_type}: {junk[:80]}")
+                        ts = datetime.now().strftime("%b %d %H:%M")
+                        save_build_entry(
+                            st.session_state.active_key,
+                            f"[{ts}] {project_type}: {junk[:80]}"
+                        )
             else:
                 st.warning("Need some junk to work with, boss.")
 
@@ -392,11 +462,11 @@ with tab3:
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("### EXAMPLE BUILDS")
     examples = [
-        ("🔋 Old generator + wheels",          "Tracked power rover that charges your Orange Pi 5 Plus off-grid"),
-        ("⚙️ Weed eater motor + PVC",           "Mini tracked scout bot with camera mount"),
-        ("🔌 Ryobi 40V battery + old box fan",  "Portable high-power USB-C station for field robotics"),
-        ("🌿 Lawnmower deck + wheelchair motors","Full-size outdoor robot platform with autonomous mowing"),
-        ("🎛️ Old PC PSU + Arduino",             "Bench power supply with digital voltage/current display"),
+        ("🔋 Old generator + wheels",           "Tracked power rover that charges your Orange Pi 5 Plus off-grid"),
+        ("⚙️ Weed eater motor + PVC",            "Mini tracked scout bot with camera mount"),
+        ("🔌 Ryobi 40V battery + old box fan",   "Portable high-power USB-C station for field robotics"),
+        ("🌿 Lawnmower deck + wheelchair motors", "Full-size outdoor robot platform with autonomous mowing"),
+        ("🎛️ Old PC PSU + Arduino",              "Bench power supply with digital voltage/current display"),
     ]
     for ex_junk, ex_idea in examples:
         st.markdown(f"""
@@ -408,152 +478,20 @@ with tab3:
     <span style="color:#C8D4E8;">{ex_idea}</span>
 </div>
 """, unsafe_allow_html=True)
-        # Generate key
-        st.markdown("""
-<div style="font-family:'Share Tech Mono',monospace;color:#FF6B00;
-            letter-spacing:3px;font-size:0.8rem;margin-bottom:12px;">
-    ── GENERATE LICENSE KEY ──────────────────────────
-</div>
-""", unsafe_allow_html=True)
-        col_n, col_e = st.columns(2)
-        with col_n:
-            new_name = st.text_input("CUSTOMER NAME")
-        with col_e:
-            new_email = st.text_input("CUSTOMER EMAIL")
 
-        if st.button("⚡ GENERATE & EMAIL KEY"):
-            if new_email.strip():
-                new_key = create_license(new_email.strip(), new_name.strip())
-                
-                # ALWAYS show key on screen
-                st.markdown(f"<div class='key-box'>{new_key}</div>", unsafe_allow_html=True)
-                
-                try:
-                    ok = send_welcome_email(new_email.strip(), new_name.strip(), new_key)
-                    if ok:
-                        st.success(f"✅ Key generated and emailed to {new_email}")
-                    else:
-                        st.warning("⚠️ Key generated — copy it above (email blocked on free tier)")
-                except:
-                    st.warning("⚠️ Key generated — copy it above (email blocked on free tier)")
-            else:
-                st.warning("Enter a customer email.")
-
-        st.divider()
-
-        # Manage key
-        st.markdown("""
-<div style="font-family:'Share Tech Mono',monospace;color:#FF6B00;
-            letter-spacing:3px;font-size:0.8rem;margin-bottom:12px;">
-    ── MANAGE A KEY ──────────────────────────────────
-</div>
-""", unsafe_allow_html=True)
-        manage_key = st.text_input("LICENSE KEY TO MANAGE")
-        col_m1, col_m2, col_m3 = st.columns(3)
-        with col_m1:
-            ext_days = st.number_input("EXTEND BY (DAYS)", min_value=1, max_value=365, value=30)
-            if st.button("✅ EXTEND LICENSE", use_container_width=True):
-                if manage_key.strip():
-                    ok = extend_license(manage_key.strip(), int(ext_days))
-                    st.success("Extended!") if ok else st.error("Key not found.")
-                else:
-                    st.warning("Enter a key.")
-        with col_m2:
-            rev_reason = st.text_input("REVOKE REASON")
-            if st.button("🚫 REVOKE LICENSE", use_container_width=True):
-                if manage_key.strip():
-                    ok = revoke_license(manage_key.strip(), rev_reason)
-                    st.success("Revoked.") if ok else st.error("Key not found.")
-                else:
-                    st.warning("Enter a key.")
-        with col_m3:
-            st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("🗑️ DELETE USER DATA", use_container_width=True):
-                if manage_key.strip():
-                    delete_user_data(manage_key.strip())
-                    st.success("User data deleted.")
-                else:
-                    st.warning("Enter a key.")
-
-        st.divider()
-
-        # All users + lifecycle + webhook (unchanged)
-        st.markdown("""
-<div style="font-family:'Share Tech Mono',monospace;color:#FF6B00;
-            letter-spacing:3px;font-size:0.8rem;margin-bottom:12px;">
-    ── ALL LICENSE HOLDERS ───────────────────────────
-</div>
-""", unsafe_allow_html=True)
-        all_licenses = get_all_licenses()
-        now = datetime.utcnow()
-        if all_licenses:
-            for lic in all_licenses:
-                exp_dt = datetime.fromisoformat(lic["expires_at"])
-                days_left = (exp_dt - now).days
-                color = "#4CAF50" if days_left > 10 else "#FF8C00" if days_left > 0 else "#FF4B4B"
-                st.markdown(f"""
-<div class='admin-row'>
-    <strong style="color:#C8D4E8;">{lic['name'] or '(no name)'}</strong>
-    <span style="color:#3A4A5C;"> — </span>
-    <span style="color:#7A8BA0;">{lic['email']}</span><br/>
-    <span style="color:#3A4A5C;font-size:0.8rem;font-family:'Share Tech Mono',monospace;">
-        KEY:
-    </span>
-    <code>{lic['key_plain']}</code>
-    <span style="color:#3A4A5C;"> &nbsp;|&nbsp; </span>
-    <span style="color:{color};font-weight:700;font-size:0.85rem;letter-spacing:1px;">
-        {lic['status'].upper()}
-    </span>
-    <span style="color:#3A4A5C;"> &nbsp;|&nbsp; </span>
-    <span style="color:#7A8BA0;">Expires {lic['expires_at'][:10]} ({days_left}d)</span>
-    <span style="color:#3A4A5C;"> &nbsp;|&nbsp; </span>
-    <span style="color:#3A4A5C;font-size:0.85rem;">Created {lic['created_at'][:10]}</span>
-    {f'<br/><em style="color:#5A6A7C;">{lic["notes"]}</em>' if lic['notes'] else ''}
-</div>
-""", unsafe_allow_html=True)
-        else:
-            st.info("No license holders yet.")
-        st.divider()
-
-        st.markdown("""
-<div style="font-family:'Share Tech Mono',monospace;color:#FF6B00;
-            letter-spacing:3px;font-size:0.8rem;margin-bottom:12px;">
-    ── LIFECYCLE ─────────────────────────────────────
-</div>
-""", unsafe_allow_html=True)
-        st.write("Normally runs every 24h. Force it now:")
-        if st.button("🔄 RUN LIFECYCLE CHECK NOW"):
-            with st.spinner("Checking all licenses..."):
-                run_daily_lifecycle(STRIPE_PAYMENT_URL)
-            st.success("Done. Warning emails sent where needed.")
-        st.divider()
-
-        # Stripe info (fixed URL)
-        st.markdown("""
-<div style="font-family:'Share Tech Mono',monospace;color:#FF6B00;
-            letter-spacing:3px;font-size:0.8rem;margin-bottom:12px;">
-    ── STRIPE WEBHOOK ────────────────────────────────
-</div>
-""", unsafe_allow_html=True)
-        st.code("POST https://thebuilder-webhook.onrender.com/stripe-webhook", language="")
-        st.markdown("""
-Set this URL in **Stripe → Developers → Webhooks → Add endpoint**.
-Listen for `checkout.session.completed`.
-Set `STRIPE_WEBHOOK_SEC` env variable to the signing secret.
-""")
 
 # ── TAB 4: SAFETY ─────────────────────────────────────────────────────────────
 with tab4:
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("### PRO TIPS & SAFETY")
     tips = [
-        ("👁️ EYE PROTECTION",    "Always wear safety glasses when cutting, grinding, or running motors. Metal shards travel fast."),
-        ("🔋 BATTERY SAFETY",    "Never run bare lithium cells without a BMS. Ryobi tool packs are ideal — BMS is built in. Never charge unattended."),
-        ("⚡ MOTOR TESTING",     "Test all repurposed motors at 20% power first. Unknown coil resistance means unknown current draw."),
-        ("🖥️ COMPUTE CHOICE",    "Orange Pi 5 Plus or Radxa Rock 5C for real robotics — they handle GPIO, PWM, and real-time control properly."),
-        ("🔩 FRAME INTEGRITY",   "Measure twice, cut outside. PVC and 2x4 frames need gussets at stress points or they'll flex under load."),
-        ("🌡️ HEAT MANAGEMENT",   "High-current motor controllers get hot. Mount a heatsink and always run a thermal shutoff relay."),
-        ("🛡️ FAILSAFE FIRST",    "Wire a physical kill switch before anything else. Software fails; a relay doesn't."),
+        ("👁️ EYE PROTECTION",  "Always wear safety glasses when cutting, grinding, or running motors. Metal shards travel fast."),
+        ("🔋 BATTERY SAFETY",  "Never run bare lithium cells without a BMS. Ryobi tool packs are ideal — BMS is built in. Never charge unattended."),
+        ("⚡ MOTOR TESTING",   "Test all repurposed motors at 20% power first. Unknown coil resistance means unknown current draw."),
+        ("🖥️ COMPUTE CHOICE",  "Orange Pi 5 Plus or Radxa Rock 5C for real robotics — they handle GPIO, PWM, and real-time control properly."),
+        ("🔩 FRAME INTEGRITY", "Measure twice, cut outside. PVC and 2x4 frames need gussets at stress points or they'll flex under load."),
+        ("🌡️ HEAT MANAGEMENT", "High-current motor controllers get hot. Mount a heatsink and always run a thermal shutoff relay."),
+        ("🛡️ FAILSAFE FIRST",  "Wire a physical kill switch before anything else. Software fails; a relay doesn't."),
     ]
     for icon_title, body in tips:
         st.markdown(f"""
@@ -573,7 +511,7 @@ if st.session_state.is_admin and tab_admin is not None:
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("### ⚙️ ADMIN PANEL")
 
-        # Generate key
+        # ── Generate key ──────────────────────────────────────────────────────
         st.markdown("""
 <div style="font-family:'Share Tech Mono',monospace;color:#FF6B00;
             letter-spacing:3px;font-size:0.8rem;margin-bottom:12px;">
@@ -583,31 +521,35 @@ if st.session_state.is_admin and tab_admin is not None:
 
         col_n, col_e = st.columns(2)
         with col_n:
-            new_name = st.text_input("CUSTOMER NAME")
+            new_name  = st.text_input("CUSTOMER NAME")
         with col_e:
             new_email = st.text_input("CUSTOMER EMAIL")
 
         if st.button("⚡ GENERATE & EMAIL KEY"):
             if new_email.strip():
                 new_key = create_license(new_email.strip(), new_name.strip())
-                
-                # ALWAYS show key on screen (works on free tier)
+
+                # Always show the key on screen first
                 st.markdown(f"<div class='key-box'>{new_key}</div>", unsafe_allow_html=True)
-                
+
+                # Try Resend — works on free Render tier
                 try:
                     ok = send_welcome_email(new_email.strip(), new_name.strip(), new_key)
                     if ok:
                         st.success(f"✅ Key generated and emailed to {new_email}")
                     else:
-                        st.warning("⚠️ Key generated — copy it above (email blocked on free tier)")
-                except:
-                    st.warning("⚠️ Key generated — copy it above (email blocked on free tier)")
+                        st.warning(
+                            "⚠️ Key generated — copy it above. "
+                            "Email failed: check RESEND_API_KEY env var."
+                        )
+                except Exception as ex:
+                    st.warning(f"⚠️ Key generated — copy it above. Email error: {ex}")
             else:
                 st.warning("Enter a customer email.")
 
         st.divider()
 
-        # Manage key
+        # ── Manage key ────────────────────────────────────────────────────────
         st.markdown("""
 <div style="font-family:'Share Tech Mono',monospace;color:#FF6B00;
             letter-spacing:3px;font-size:0.8rem;margin-bottom:12px;">
@@ -644,7 +586,7 @@ if st.session_state.is_admin and tab_admin is not None:
 
         st.divider()
 
-        # All users
+        # ── All license holders ───────────────────────────────────────────────
         st.markdown("""
 <div style="font-family:'Share Tech Mono',monospace;color:#FF6B00;
             letter-spacing:3px;font-size:0.8rem;margin-bottom:12px;">
@@ -656,17 +598,15 @@ if st.session_state.is_admin and tab_admin is not None:
         now = datetime.utcnow()
         if all_licenses:
             for lic in all_licenses:
-                exp_dt = datetime.fromisoformat(lic["expires_at"])
+                exp_dt    = datetime.fromisoformat(lic["expires_at"])
                 days_left = (exp_dt - now).days
-                color = "#4CAF50" if days_left > 10 else "#FF8C00" if days_left > 0 else "#FF4B4B"
+                color     = "#4CAF50" if days_left > 10 else "#FF8C00" if days_left > 0 else "#FF4B4B"
                 st.markdown(f"""
 <div class='admin-row'>
     <strong style="color:#C8D4E8;">{lic['name'] or '(no name)'}</strong>
     <span style="color:#3A4A5C;"> — </span>
     <span style="color:#7A8BA0;">{lic['email']}</span><br/>
-    <span style="color:#3A4A5C;font-size:0.8rem;font-family:'Share Tech Mono',monospace;">
-        KEY:
-    </span>
+    <span style="color:#3A4A5C;font-size:0.8rem;font-family:'Share Tech Mono',monospace;">KEY: </span>
     <code>{lic['key_plain']}</code>
     <span style="color:#3A4A5C;"> &nbsp;|&nbsp; </span>
     <span style="color:{color};font-weight:700;font-size:0.85rem;letter-spacing:1px;">
@@ -684,7 +624,7 @@ if st.session_state.is_admin and tab_admin is not None:
 
         st.divider()
 
-        # Lifecycle + Webhook
+        # ── Lifecycle ─────────────────────────────────────────────────────────
         st.markdown("""
 <div style="font-family:'Share Tech Mono',monospace;color:#FF6B00;
             letter-spacing:3px;font-size:0.8rem;margin-bottom:12px;">
@@ -699,18 +639,21 @@ if st.session_state.is_admin and tab_admin is not None:
 
         st.divider()
 
+        # ── Stripe webhook ────────────────────────────────────────────────────
         st.markdown("""
 <div style="font-family:'Share Tech Mono',monospace;color:#FF6B00;
             letter-spacing:3px;font-size:0.8rem;margin-bottom:12px;">
     ── STRIPE WEBHOOK ────────────────────────────────
 </div>
 """, unsafe_allow_html=True)
-        st.code("POST https://thebuilder-webhook.onrender.com/stripe-webhook", language="")
+        st.code(f"POST {APP_URL}/stripe-webhook", language="")
         st.markdown("""
 Set this URL in **Stripe → Developers → Webhooks → Add endpoint**.
 Listen for `checkout.session.completed`.
 Set `STRIPE_WEBHOOK_SEC` env variable to the signing secret.
 """)
 
-st.caption("PRIVATE FOR ANTHONY · SUBSCRIPTION REQUIRED · $29.99/MO · FEB 2026")
+
+st.caption("PRIVATE FOR ANTHONY  ·  SUBSCRIPTION REQUIRED  ·  $29.99/MO  ·  FEB 2026")
+
 
