@@ -19,6 +19,489 @@ FROM_EMAIL         = os.environ.get("FROM_EMAIL",         "The Builder <noreply@
 from builder_styles import BUILDER_CSS, FORGE_HEADER_HTML
 st.markdown(BUILDER_CSS, unsafe_allow_html=True)
 
+# ── Enhanced Visual Layer (app.py only — no other files changed) ──────────────
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Rajdhani:wght@400;600;700&family=Share+Tech+Mono&display=swap');
+
+/* ── GLOBAL ATMOSPHERE ─────────────────────────────────────────── */
+html, body, [data-testid="stAppViewContainer"] {
+    background-color: #080C12 !important;
+}
+
+[data-testid="stAppViewContainer"]::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background-image:
+        linear-gradient(rgba(255,107,0,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,107,0,0.025) 1px, transparent 1px);
+    background-size: 48px 48px;
+    pointer-events: none;
+    z-index: 0;
+}
+
+[data-testid="stAppViewContainer"]::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.08) 2px,
+        rgba(0,0,0,0.08) 4px
+    );
+    pointer-events: none;
+    z-index: 1;
+}
+
+[data-testid="stMain"] {
+    position: relative;
+    z-index: 2;
+}
+
+/* ── SIDEBAR ───────────────────────────────────────────────────── */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #0A0F18 0%, #080C12 100%) !important;
+    border-right: 1px solid rgba(255,107,0,0.15) !important;
+    box-shadow: 4px 0 32px rgba(0,0,0,0.6) !important;
+}
+
+[data-testid="stSidebar"]::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #FF6B00, transparent);
+}
+
+[data-testid="stSidebarContent"] {
+    padding-top: 1.5rem !important;
+}
+
+/* ── TABS ──────────────────────────────────────────────────────── */
+[data-testid="stTabs"] {
+    gap: 0 !important;
+}
+
+[data-testid="stTabs"] > div:first-child {
+    border-bottom: 1px solid rgba(255,107,0,0.2) !important;
+    gap: 0 !important;
+    background: rgba(8,12,18,0.9);
+    padding: 0 8px;
+}
+
+[data-testid="stTabs"] button {
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 0.72rem !important;
+    letter-spacing: 2.5px !important;
+    text-transform: uppercase !important;
+    color: #3A5068 !important;
+    background: transparent !important;
+    border: none !important;
+    border-bottom: 2px solid transparent !important;
+    border-radius: 0 !important;
+    padding: 14px 22px !important;
+    transition: all 0.2s ease !important;
+    position: relative;
+}
+
+[data-testid="stTabs"] button:hover {
+    color: #FF8C00 !important;
+    background: rgba(255,107,0,0.04) !important;
+}
+
+[data-testid="stTabs"] button[aria-selected="true"] {
+    color: #FF6B00 !important;
+    border-bottom: 2px solid #FF6B00 !important;
+    background: rgba(255,107,0,0.06) !important;
+    text-shadow: 0 0 12px rgba(255,107,0,0.5);
+}
+
+[data-testid="stTabsContent"] {
+    padding-top: 8px !important;
+    border: none !important;
+}
+
+/* ── BUTTONS ───────────────────────────────────────────────────── */
+[data-testid="stButton"] > button {
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 0.75rem !important;
+    letter-spacing: 2px !important;
+    text-transform: uppercase !important;
+    border-radius: 2px !important;
+    border: 1px solid rgba(255,107,0,0.35) !important;
+    background: rgba(255,107,0,0.06) !important;
+    color: #FF8C00 !important;
+    transition: all 0.18s ease !important;
+    box-shadow: inset 0 0 0 0 rgba(255,107,0,0) !important;
+}
+
+[data-testid="stButton"] > button:hover {
+    border-color: #FF6B00 !important;
+    background: rgba(255,107,0,0.12) !important;
+    color: #FFB04E !important;
+    box-shadow: 0 0 16px rgba(255,107,0,0.2), inset 0 0 8px rgba(255,107,0,0.05) !important;
+    transform: translateY(-1px);
+}
+
+[data-testid="stButton"] > button:active {
+    transform: translateY(0px) !important;
+}
+
+/* Primary / FORGE IT button */
+[data-testid="stButton"] > button[kind="primary"],
+[data-testid="stButton"] > button[data-testid*="primary"] {
+    background: linear-gradient(135deg, #C45000 0%, #FF6B00 50%, #FF8C35 100%) !important;
+    border: none !important;
+    color: #fff !important;
+    font-size: 0.85rem !important;
+    letter-spacing: 3px !important;
+    font-weight: 700 !important;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.5) !important;
+    box-shadow: 0 0 0 0 rgba(255,107,0,0.5) !important;
+    animation: forge-pulse 2.8s ease-in-out infinite !important;
+    padding: 18px 12px !important;
+    min-height: 90px !important;
+}
+
+[data-testid="stButton"] > button[kind="primary"]:hover {
+    background: linear-gradient(135deg, #D45800 0%, #FF7B10 50%, #FFA050 100%) !important;
+    box-shadow: 0 0 28px rgba(255,107,0,0.55), 0 4px 20px rgba(0,0,0,0.4) !important;
+    transform: translateY(-2px) !important;
+    animation: none !important;
+}
+
+@keyframes forge-pulse {
+    0%, 100% { box-shadow: 0 0 8px rgba(255,107,0,0.3), 0 2px 12px rgba(0,0,0,0.3); }
+    50%       { box-shadow: 0 0 24px rgba(255,107,0,0.55), 0 2px 16px rgba(0,0,0,0.4); }
+}
+
+/* Download button */
+[data-testid="stDownloadButton"] > button {
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 0.72rem !important;
+    letter-spacing: 2px !important;
+    text-transform: uppercase !important;
+    border-radius: 2px !important;
+    border: 1px solid rgba(100,200,100,0.3) !important;
+    background: rgba(80,160,80,0.07) !important;
+    color: #7EC87E !important;
+    transition: all 0.2s ease !important;
+}
+
+[data-testid="stDownloadButton"] > button:hover {
+    border-color: #7EC87E !important;
+    background: rgba(80,160,80,0.14) !important;
+    box-shadow: 0 0 14px rgba(100,200,100,0.2) !important;
+    transform: translateY(-1px) !important;
+}
+
+/* ── INPUTS ────────────────────────────────────────────────────── */
+[data-testid="stTextInput"] > div > div > input,
+[data-testid="stTextArea"] > div > div > textarea {
+    background: #0D1320 !important;
+    border: 1px solid rgba(255,107,0,0.18) !important;
+    border-radius: 2px !important;
+    color: #C8D4E8 !important;
+    font-family: 'Rajdhani', sans-serif !important;
+    font-size: 1rem !important;
+    letter-spacing: 0.5px !important;
+    caret-color: #FF6B00 !important;
+    transition: border-color 0.2s, box-shadow 0.2s !important;
+    box-shadow: inset 0 2px 8px rgba(0,0,0,0.3) !important;
+}
+
+[data-testid="stTextInput"] > div > div > input:focus,
+[data-testid="stTextArea"] > div > div > textarea:focus {
+    border-color: rgba(255,107,0,0.55) !important;
+    box-shadow: 0 0 0 1px rgba(255,107,0,0.2), inset 0 2px 8px rgba(0,0,0,0.3) !important;
+    outline: none !important;
+}
+
+[data-testid="stTextInput"] label,
+[data-testid="stTextArea"] label,
+[data-testid="stFileUploader"] label,
+[data-testid="stSelectbox"] label,
+[data-testid="stNumberInput"] label {
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 0.7rem !important;
+    letter-spacing: 2.5px !important;
+    text-transform: uppercase !important;
+    color: #556070 !important;
+}
+
+/* ── SELECTBOX ─────────────────────────────────────────────────── */
+[data-testid="stSelectbox"] > div > div {
+    background: #0D1320 !important;
+    border: 1px solid rgba(255,107,0,0.18) !important;
+    border-radius: 2px !important;
+    color: #C8D4E8 !important;
+    font-family: 'Rajdhani', sans-serif !important;
+    transition: border-color 0.2s !important;
+}
+
+[data-testid="stSelectbox"] > div > div:hover {
+    border-color: rgba(255,107,0,0.4) !important;
+}
+
+/* ── FILE UPLOADER ─────────────────────────────────────────────── */
+[data-testid="stFileUploader"] > section {
+    background: rgba(13,19,32,0.7) !important;
+    border: 1px dashed rgba(255,107,0,0.2) !important;
+    border-radius: 3px !important;
+    transition: border-color 0.2s, background 0.2s !important;
+}
+
+[data-testid="stFileUploader"] > section:hover {
+    background: rgba(255,107,0,0.04) !important;
+    border-color: rgba(255,107,0,0.4) !important;
+}
+
+/* ── EXPANDERS (history) ───────────────────────────────────────── */
+[data-testid="stExpander"] {
+    background: #0D1320 !important;
+    border: 1px solid rgba(255,107,0,0.12) !important;
+    border-radius: 2px !important;
+    margin-bottom: 6px !important;
+    transition: border-color 0.2s !important;
+}
+
+[data-testid="stExpander"]:hover {
+    border-color: rgba(255,107,0,0.28) !important;
+}
+
+[data-testid="stExpander"] summary {
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 0.78rem !important;
+    letter-spacing: 2px !important;
+    text-transform: uppercase !important;
+    color: #7A8BA0 !important;
+    padding: 12px 16px !important;
+}
+
+[data-testid="stExpander"] summary:hover {
+    color: #FF8C00 !important;
+}
+
+[data-testid="stExpander"] svg {
+    fill: rgba(255,107,0,0.5) !important;
+}
+
+/* ── SPINNER ───────────────────────────────────────────────────── */
+[data-testid="stSpinner"] > div {
+    border-top-color: #FF6B00 !important;
+}
+
+/* ── ALERTS / INFO ─────────────────────────────────────────────── */
+[data-testid="stAlert"] {
+    border-radius: 2px !important;
+    border-left-width: 3px !important;
+    font-family: 'Rajdhani', sans-serif !important;
+    font-size: 0.95rem !important;
+    letter-spacing: 0.5px !important;
+}
+
+/* ── DIVIDER ───────────────────────────────────────────────────── */
+hr {
+    border-color: rgba(255,107,0,0.12) !important;
+    margin: 1.5rem 0 !important;
+}
+
+/* ── SCROLLBAR ─────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: #080C12; }
+::-webkit-scrollbar-thumb { background: rgba(255,107,0,0.25); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,107,0,0.5); }
+
+/* ── MARKDOWN OUTPUT ───────────────────────────────────────────── */
+[data-testid="stMarkdownContainer"] strong {
+    color: #FF8C00 !important;
+    letter-spacing: 1px;
+}
+
+[data-testid="stMarkdownContainer"] code {
+    background: rgba(255,107,0,0.08) !important;
+    border: 1px solid rgba(255,107,0,0.15) !important;
+    color: #FFB060 !important;
+    border-radius: 2px !important;
+    font-family: 'Share Tech Mono', monospace !important;
+    padding: 1px 6px !important;
+}
+
+[data-testid="stMarkdownContainer"] pre {
+    background: #0A0F1A !important;
+    border: 1px solid rgba(255,107,0,0.2) !important;
+    border-left: 3px solid #FF6B00 !important;
+    border-radius: 0 3px 3px 0 !important;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4) !important;
+}
+
+[data-testid="stMarkdownContainer"] pre code {
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    color: #9BCFFF !important;
+}
+
+/* ── RADIO (sidebar) ───────────────────────────────────────────── */
+[data-testid="stRadio"] label {
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 0.72rem !important;
+    letter-spacing: 2px !important;
+    color: #7A8BA0 !important;
+    text-transform: uppercase !important;
+}
+
+[data-testid="stRadio"] > div {
+    gap: 4px !important;
+}
+
+/* ── CAPTION ───────────────────────────────────────────────────── */
+[data-testid="stCaptionContainer"] {
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 0.65rem !important;
+    letter-spacing: 3px !important;
+    color: rgba(58,74,92,0.7) !important;
+    text-align: center !important;
+    text-transform: uppercase !important;
+    border-top: 1px solid rgba(255,107,0,0.06) !important;
+    padding-top: 12px !important;
+    margin-top: 24px !important;
+}
+
+/* ── NUMBER INPUT ──────────────────────────────────────────────── */
+[data-testid="stNumberInput"] input {
+    background: #0D1320 !important;
+    border: 1px solid rgba(255,107,0,0.18) !important;
+    border-radius: 2px !important;
+    color: #C8D4E8 !important;
+    font-family: 'Share Tech Mono', monospace !important;
+}
+
+/* ── TOAST / SUCCESS / WARNING ─────────────────────────────────── */
+[data-testid="stSuccess"],
+[data-testid="stWarning"],
+[data-testid="stError"] {
+    border-radius: 2px !important;
+    font-family: 'Rajdhani', sans-serif !important;
+    letter-spacing: 0.5px !important;
+}
+
+/* ── MAIN CONTENT AREA PADDING ─────────────────────────────────── */
+[data-testid="stMainBlockContainer"] {
+    padding-top: 1rem !important;
+    max-width: 1400px !important;
+}
+
+/* ── HEADER AREA TOP STRIPE ────────────────────────────────────── */
+[data-testid="stHeader"] {
+    background: transparent !important;
+}
+
+/* ── KEY BOX (admin) ───────────────────────────────────────────── */
+.key-box {
+    background: linear-gradient(135deg, #0D1320, #111928) !important;
+    border: 1px solid rgba(255,107,0,0.4) !important;
+    border-radius: 3px !important;
+    padding: 16px 24px !important;
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 1.2rem !important;
+    letter-spacing: 4px !important;
+    color: #FF8C00 !important;
+    text-align: center !important;
+    box-shadow: 0 0 24px rgba(255,107,0,0.15), inset 0 2px 8px rgba(0,0,0,0.3) !important;
+    margin: 12px 0 !important;
+    user-select: all !important;
+}
+
+/* ── ADMIN ROW ─────────────────────────────────────────────────── */
+.admin-row {
+    background: rgba(13,19,32,0.7) !important;
+    border: 1px solid rgba(255,107,0,0.1) !important;
+    border-radius: 2px !important;
+    padding: 12px 16px !important;
+    margin-bottom: 6px !important;
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 0.8rem !important;
+    transition: border-color 0.2s !important;
+    line-height: 1.8 !important;
+}
+
+.admin-row:hover {
+    border-color: rgba(255,107,0,0.25) !important;
+    background: rgba(255,107,0,0.03) !important;
+}
+
+/* ── WARNING / DANGER BANNERS ──────────────────────────────────── */
+.warning-banner {
+    background: linear-gradient(135deg, rgba(255,107,0,0.08), rgba(255,107,0,0.04)) !important;
+    border: 1px solid rgba(255,107,0,0.35) !important;
+    border-left: 4px solid #FF6B00 !important;
+    border-radius: 0 3px 3px 0 !important;
+    padding: 14px 20px !important;
+    margin-bottom: 16px !important;
+    font-family: 'Rajdhani', sans-serif !important;
+    color: #FFB060 !important;
+    font-size: 0.95rem !important;
+    letter-spacing: 0.5px !important;
+    box-shadow: 0 2px 12px rgba(255,107,0,0.1) !important;
+}
+
+.danger-banner {
+    background: linear-gradient(135deg, rgba(255,75,75,0.1), rgba(255,75,75,0.05)) !important;
+    border: 1px solid rgba(255,75,75,0.4) !important;
+    border-left: 4px solid #FF4B4B !important;
+    border-radius: 0 3px 3px 0 !important;
+    padding: 14px 20px !important;
+    margin-bottom: 16px !important;
+    font-family: 'Rajdhani', sans-serif !important;
+    color: #FF9090 !important;
+    font-size: 0.95rem !important;
+    letter-spacing: 0.5px !important;
+    animation: danger-flash 2s ease-in-out infinite !important;
+}
+
+@keyframes danger-flash {
+    0%, 100% { box-shadow: 0 2px 12px rgba(255,75,75,0.1); }
+    50%       { box-shadow: 0 2px 20px rgba(255,75,75,0.25); }
+}
+
+/* ── STRIPE BUTTON ─────────────────────────────────────────────── */
+.stripe-btn {
+    display: block !important;
+    background: linear-gradient(135deg, #C45000, #FF6B00) !important;
+    color: #fff !important;
+    text-align: center !important;
+    padding: 13px 20px !important;
+    border-radius: 2px !important;
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 0.8rem !important;
+    letter-spacing: 2.5px !important;
+    text-decoration: none !important;
+    text-transform: uppercase !important;
+    margin-top: 10px !important;
+    transition: all 0.2s ease !important;
+    box-shadow: 0 4px 16px rgba(255,107,0,0.3) !important;
+}
+
+.stripe-btn:hover {
+    background: linear-gradient(135deg, #D45800, #FF7B10) !important;
+    box-shadow: 0 6px 24px rgba(255,107,0,0.45) !important;
+    transform: translateY(-1px) !important;
+    text-decoration: none !important;
+    color: #fff !important;
+}
+
+/* ── IMAGE ─────────────────────────────────────────────────────── */
+[data-testid="stImage"] img {
+    filter: brightness(0.95) contrast(1.05) !important;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
 # ── Key manager ────────────────────────────────────────────────────────────────
 from key_manager import (
     init_db, create_license, validate_key, revoke_license,
@@ -655,5 +1138,6 @@ Set `STRIPE_WEBHOOK_SEC` env variable to the signing secret.
 
 
 st.caption("PRIVATE FOR ANTHONY  ·  SUBSCRIPTION REQUIRED  ·  $29.99/MO  ·  FEB 2026")
+
 
 
