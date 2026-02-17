@@ -408,39 +408,6 @@ with tab3:
     <span style="color:#C8D4E8;">{ex_idea}</span>
 </div>
 """, unsafe_allow_html=True)
-
-
-# ── TAB 4: SAFETY ─────────────────────────────────────────────────────────────
-with tab4:
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown("### PRO TIPS & SAFETY")
-    tips = [
-        ("👁️ EYE PROTECTION",    "Always wear safety glasses when cutting, grinding, or running motors. Metal shards travel fast."),
-        ("🔋 BATTERY SAFETY",    "Never run bare lithium cells without a BMS. Ryobi tool packs are ideal — BMS is built in. Never charge unattended."),
-        ("⚡ MOTOR TESTING",     "Test all repurposed motors at 20% power first. Unknown coil resistance means unknown current draw."),
-        ("🖥️ COMPUTE CHOICE",    "Orange Pi 5 Plus or Radxa Rock 5C for real robotics — they handle GPIO, PWM, and real-time control properly."),
-        ("🔩 FRAME INTEGRITY",   "Measure twice, cut outside. PVC and 2x4 frames need gussets at stress points or they'll flex under load."),
-        ("🌡️ HEAT MANAGEMENT",   "High-current motor controllers get hot. Mount a heatsink and always run a thermal shutoff relay."),
-        ("🛡️ FAILSAFE FIRST",    "Wire a physical kill switch before anything else. Software fails; a relay doesn't."),
-    ]
-    for icon_title, body in tips:
-        st.markdown(f"""
-<div style="background:#1C2333;border:1px solid rgba(255,107,0,0.12);
-            border-left:3px solid rgba(255,107,0,0.5);border-radius:0 4px 4px 0;
-            padding:16px 20px;margin-bottom:10px;font-family:'Rajdhani',sans-serif;">
-    <div style="color:#FF8C00;font-weight:700;font-size:0.8rem;letter-spacing:3px;
-                text-transform:uppercase;margin-bottom:4px;">{icon_title}</div>
-    <div style="color:#C8D4E8;font-size:1rem;line-height:1.6;">{body}</div>
-</div>
-""", unsafe_allow_html=True)
-
-
-# ── TAB 5: ADMIN ──────────────────────────────────────────────────────────────
-if st.session_state.is_admin and tab_admin is not None:
-    with tab_admin:
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("### ⚙️ ADMIN PANEL")
-
         # Generate key
         st.markdown("""
 <div style="font-family:'Share Tech Mono',monospace;color:#FF6B00;
@@ -450,28 +417,27 @@ if st.session_state.is_admin and tab_admin is not None:
 """, unsafe_allow_html=True)
         col_n, col_e = st.columns(2)
         with col_n:
-            new_name  = st.text_input("CUSTOMER NAME")
+            new_name = st.text_input("CUSTOMER NAME")
         with col_e:
             new_email = st.text_input("CUSTOMER EMAIL")
 
-                if st.button("⚡ GENERATE & EMAIL KEY"):
+        if st.button("⚡ GENERATE & EMAIL KEY"):
             if new_email.strip():
                 new_key = create_license(new_email.strip(), new_name.strip())
                 
-                # ALWAYS show the key on screen
+                # ALWAYS show key on screen
                 st.markdown(f"<div class='key-box'>{new_key}</div>", unsafe_allow_html=True)
                 
-                # Try email (fails silently on free tier)
                 try:
                     ok = send_welcome_email(new_email.strip(), new_name.strip(), new_key)
                     if ok:
                         st.success(f"✅ Key generated and emailed to {new_email}")
                     else:
-                        st.warning("⚠️ Key generated — copy it above (email blocked on free Render)")
+                        st.warning("⚠️ Key generated — copy it above (email blocked on free tier)")
                 except:
-                    st.warning("⚠️ Key generated — copy it above (email blocked on free Render)")
+                    st.warning("⚠️ Key generated — copy it above (email blocked on free tier)")
             else:
-                st.warning("Enter a customer email."))
+                st.warning("Enter a customer email.")
 
         st.divider()
 
@@ -511,7 +477,7 @@ if st.session_state.is_admin and tab_admin is not None:
 
         st.divider()
 
-        # All users
+        # All users + lifecycle + webhook (unchanged)
         st.markdown("""
 <div style="font-family:'Share Tech Mono',monospace;color:#FF6B00;
             letter-spacing:3px;font-size:0.8rem;margin-bottom:12px;">
@@ -522,9 +488,9 @@ if st.session_state.is_admin and tab_admin is not None:
         now = datetime.utcnow()
         if all_licenses:
             for lic in all_licenses:
-                exp_dt    = datetime.fromisoformat(lic["expires_at"])
+                exp_dt = datetime.fromisoformat(lic["expires_at"])
                 days_left = (exp_dt - now).days
-                color     = "#4CAF50" if days_left > 10 else "#FF8C00" if days_left > 0 else "#FF4B4B"
+                color = "#4CAF50" if days_left > 10 else "#FF8C00" if days_left > 0 else "#FF4B4B"
                 st.markdown(f"""
 <div class='admin-row'>
     <strong style="color:#C8D4E8;">{lic['name'] or '(no name)'}</strong>
@@ -547,10 +513,8 @@ if st.session_state.is_admin and tab_admin is not None:
 """, unsafe_allow_html=True)
         else:
             st.info("No license holders yet.")
-
         st.divider()
 
-        # Manual lifecycle
         st.markdown("""
 <div style="font-family:'Share Tech Mono',monospace;color:#FF6B00;
             letter-spacing:3px;font-size:0.8rem;margin-bottom:12px;">
@@ -562,24 +526,51 @@ if st.session_state.is_admin and tab_admin is not None:
             with st.spinner("Checking all licenses..."):
                 run_daily_lifecycle(STRIPE_PAYMENT_URL)
             st.success("Done. Warning emails sent where needed.")
-
         st.divider()
 
-        # Stripe info
+        # Stripe info (fixed URL)
         st.markdown("""
 <div style="font-family:'Share Tech Mono',monospace;color:#FF6B00;
             letter-spacing:3px;font-size:0.8rem;margin-bottom:12px;">
     ── STRIPE WEBHOOK ────────────────────────────────
 </div>
 """, unsafe_allow_html=True)
-        st.code(f"POST {APP_URL}/stripe-webhook", language="")
+        st.code("POST https://thebuilder-webhook.onrender.com/stripe-webhook", language="")
         st.markdown("""
 Set this URL in **Stripe → Developers → Webhooks → Add endpoint**.
 Listen for `checkout.session.completed`.
 Set `STRIPE_WEBHOOK_SEC` env variable to the signing secret.
 """)
 
+# ── TAB 4: SAFETY ─────────────────────────────────────────────────────────────
+with tab4:
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("### PRO TIPS & SAFETY")
+    tips = [
+        ("👁️ EYE PROTECTION",    "Always wear safety glasses when cutting, grinding, or running motors. Metal shards travel fast."),
+        ("🔋 BATTERY SAFETY",    "Never run bare lithium cells without a BMS. Ryobi tool packs are ideal — BMS is built in. Never charge unattended."),
+        ("⚡ MOTOR TESTING",     "Test all repurposed motors at 20% power first. Unknown coil resistance means unknown current draw."),
+        ("🖥️ COMPUTE CHOICE",    "Orange Pi 5 Plus or Radxa Rock 5C for real robotics — they handle GPIO, PWM, and real-time control properly."),
+        ("🔩 FRAME INTEGRITY",   "Measure twice, cut outside. PVC and 2x4 frames need gussets at stress points or they'll flex under load."),
+        ("🌡️ HEAT MANAGEMENT",   "High-current motor controllers get hot. Mount a heatsink and always run a thermal shutoff relay."),
+        ("🛡️ FAILSAFE FIRST",    "Wire a physical kill switch before anything else. Software fails; a relay doesn't."),
+    ]
+    for icon_title, body in tips:
+        st.markdown(f"""
+<div style="background:#1C2333;border:1px solid rgba(255,107,0,0.12);
+            border-left:3px solid rgba(255,107,0,0.5);border-radius:0 4px 4px 0;
+            padding:16px 20px;margin-bottom:10px;font-family:'Rajdhani',sans-serif;">
+    <div style="color:#FF8C00;font-weight:700;font-size:0.8rem;letter-spacing:3px;
+                text-transform:uppercase;margin-bottom:4px;">{icon_title}</div>
+    <div style="color:#C8D4E8;font-size:1rem;line-height:1.6;">{body}</div>
+</div>
+""", unsafe_allow_html=True)
 
 
-st.caption("PRIVATE FOR ANTHONY  ·  SUBSCRIPTION REQUIRED  ·  $29.99/MO  ·  FEB 2026")
+# ── TAB 5: ADMIN ──────────────────────────────────────────────────────────────
+if st.session_state.is_admin and tab_admin is not None:
+    with tab_admin:
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("### ⚙️ ADMIN PANEL")
 
+      
