@@ -454,15 +454,22 @@ if st.session_state.is_admin and tab_admin is not None:
         with col_e:
             new_email = st.text_input("CUSTOMER EMAIL")
 
-        if st.button("⚡ GENERATE & EMAIL KEY"):
+                if st.button("⚡ GENERATE & EMAIL KEY"):
             if new_email.strip():
                 new_key = create_license(new_email.strip(), new_name.strip())
-                ok      = send_welcome_email(new_email.strip(), new_name.strip(), new_key)
+                
+                # ALWAYS show the key on screen (even if email fails)
                 st.markdown(f"<div class='key-box'>{new_key}</div>", unsafe_allow_html=True)
-                if ok:
-                    st.success(f"✅ Key generated and emailed to {new_email}")
-                else:
-                    st.warning("⚠️ Key generated but email failed — copy it above.")
+                
+                # Try to send email (fails silently on free tier)
+                try:
+                    ok = send_welcome_email(new_email.strip(), new_name.strip(), new_key)
+                    if ok:
+                        st.success(f"✅ Key generated and emailed to {new_email}")
+                    else:
+                        st.warning("⚠️ Key generated — email failed (Render free tier limitation). Copy the key above.")
+                except:
+                    st.warning("⚠️ Key generated — email failed (Render free tier). Copy the key above.")
             else:
                 st.warning("Enter a customer email.")
 
@@ -571,6 +578,7 @@ Set this URL in **Stripe → Developers → Webhooks → Add endpoint**.
 Listen for `checkout.session.completed`.
 Set `STRIPE_WEBHOOK_SEC` env variable to the signing secret.
 """)
+
 
 
 st.caption("PRIVATE FOR ANTHONY  ·  SUBSCRIPTION REQUIRED  ·  $29.99/MO  ·  FEB 2026")
