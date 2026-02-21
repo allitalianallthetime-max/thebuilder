@@ -1,126 +1,52 @@
-# render.yaml — The Builder: Full Microservices Deployment
-# =========================================================
-# This is the master blueprint for Render to wire your services together.
-
 services:
-
-  # ── 1. Streamlit UI (The Cockpit) ────────────────────────────────────────
+  # UI Service
   - type: web
     name: builder-ui
-    env: python
-    buildCommand: pip install -r requirements-ui.txt
-    startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run app.py
     envVars:
-      - key: MASTER_KEY
-        sync: false
-      - key: STRIPE_PAYMENT_URL
-        sync: false
-      - key: APP_URL
-        sync: false
       - key: AUTH_SERVICE_URL
-        fromService:
-          name: builder-auth
-          type: web
-          property: host
+        value: http://builder-auth:10000
       - key: AI_SERVICE_URL
-        fromService:
-          name: builder-ai
-          type: web
-          property: host
+        value: http://builder-ai:10000
       - key: INTERNAL_API_KEY
-        sync: false
-
-  # ── 2. Auth Service (The Control Board) ───────────────────────────────────
-  - type: web
-    name: builder-auth
-    env: python
-    buildCommand: pip install -r requirements-services.txt
-    startCommand: uvicorn auth_service:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /health
-    envVars:
-      - key: INTERNAL_API_KEY
-        sync: false
-      - key: DATABASE_URL
-        fromDatabase:
-          name: builder-db
-          property: connectionString
-      - key: JWT_SECRET
         generateValue: true
-      - key: RESEND_API_KEY
-        sync: false
-      - key: FROM_EMAIL
-        sync: false
-      - key: APP_URL
-        sync: false
+      - key: MASTER_KEY
+        sync: false # Set your login password in Render UI
+      - key: PYTHON_VERSION
+        value: 3.11.7
 
-  # ── 3. AI Service (The Brain) ─────────────────────────────────────────────
+  # AI Service
   - type: web
     name: builder-ai
-    env: python
-    buildCommand: pip install -r requirements-services.txt
-    startCommand: uvicorn ai_service:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /health
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn ai_service:app --host 0.0.0.0 --port 10000
     envVars:
-      - key: GROQ_API_KEY
-        sync: false
       - key: INTERNAL_API_KEY
+        fromService:
+          name: builder-ui
+          type: env
+          key: INTERNAL_API_KEY
+      - key: OPENAI_API_KEY
+        sync: false
+
+  # Billing/Webhook Service
+  - type: web
+    name: builder-billing
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn stripe_webhook:app --host 0.0.0.0 --port 10000
+    envVars:
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SEC
         sync: false
       - key: DATABASE_URL
         fromDatabase:
           name: builder-db
           property: connectionString
-      - key: DAILY_BUILD_LIMIT
-        value: "20"
-      - key: GROQ_MODEL
-        value: "llama-3.3-70b-versatile"
-
-  # ── 4. Billing Service (The Fuel Pump) ────────────────────────────────────
-  - type: web
-    name: builder-billing
-    env: python
-    buildCommand: pip install -r requirements-services.txt
-    startCommand: uvicorn billing_service:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /health
-    envVars:
-      - key: STRIPE_WEBHOOK_SEC
-        sync: false
-      - key: STRIPE_SECRET_KEY
-        sync: false
-      - key: INTERNAL_API_KEY
-        sync: false
-      - key: AUTH_SERVICE_URL
-        fromService:
-          name: builder-auth
-          type: web
-          property: host
-      - key: APP_URL
-        sync: false
-
-  # ── 5. Scheduler Worker (The Janitor) ────────────────────────────────────
-  - type: cron
-    name: builder-scheduler
-    env: python
-    buildCommand: pip install -r requirements-services.txt
-    schedule: "0 9 * * *"                   # Runs daily at 9am UTC
-    startCommand: python scheduler_worker.py # Fixed from 'command' to 'startCommand'
-    envVars:
-      - key: AUTH_SERVICE_URL
-        fromService:
-          name: builder-auth
-          type: web
-          property: host
-      - key: INTERNAL_API_KEY
-        sync: false
-      - key: RESEND_API_KEY
-        sync: false
-      - key: FROM_EMAIL
-        sync: false
-      - key: APP_URL
-        sync: false
-      - key: STRIPE_PAYMENT_URL
-        sync: false
-
-# ── 6. Database (The Tank) ──────────────────────────────────────────────────
-databases:
-  - name: builder-db
-    plan: free
