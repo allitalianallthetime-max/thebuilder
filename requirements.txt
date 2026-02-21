@@ -1,5 +1,20 @@
-streamlit>=1.42.0
-requests
-stripe
+# Web Frameworks
+streamlit
 fastapi
-uvicorn[standard]
+uvicorn
+
+# HTTP & API Communications
+requests
+httpx
+
+# Data & Security
+pydantic
+pydantic-settings
+python-dotenv
+cryptography
+
+# Database (PostgreSQL support for future-proofing)
+psycopg2-binary
+
+# Styling & UI Components
+st-theme
