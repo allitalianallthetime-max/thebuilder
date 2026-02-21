@@ -1,5 +1,4 @@
 services:
-  # ── 1. THE DASHBOARD (UI) ──────────────────────────────────────────────────
   - type: web
     name: builder-ui
     runtime: python
@@ -17,7 +16,6 @@ services:
         sync: false
       - key: PYTHON_VERSION
         value: 3.11.7
-  # ── 2. THE AI ROUND TABLE (GC, Grok, Claude) ───────────────────────────────
   - type: web
     name: builder-ai
     runtime: python
@@ -29,14 +27,13 @@ services:
         fromService:
           type: web
           name: builder-ui
-          key: INTERNAL_API_KEY
+          envVarKey: INTERNAL_API_KEY
       - key: OPENAI_API_KEY
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: XAI_API_KEY
         sync: false
-  # ── 3. THE SECURITY GUARD (Auth) ───────────────────────────────────────────
   - type: web
     name: builder-auth
     runtime: python
@@ -52,8 +49,7 @@ services:
         fromService:
           type: web
           name: builder-ui
-          key: INTERNAL_API_KEY
-# ── 4. THE STORAGE TANK (Database) ───────────────────────────────────────────
+          envVarKey: INTERNAL_API_KEY
 databases:
   - name: builder-db
     plan: free
