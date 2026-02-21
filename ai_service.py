@@ -1,89 +1,64 @@
 import os
-import httpx
-import json
-from fastapi import FastAPI, HTTPException, Header, Depends
+from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
-from dotenv import load_dotenv
-
-load_dotenv()
+import httpx
 
 app = FastAPI()
 
-# Configuration
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+# ── Security Handshake ──────────────────────────────────────────────────────
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 class BuildRequest(BaseModel):
     junk_desc: str
     project_type: str
-    image_desc: str = ""
-    history_str: str = ""
 
-# Security check
-async def verify_internal(x_internal_key: str = Header(None)):
+# ── The Round Table Logic ──────────────────────────────────────────────────
+@app.post("/generate")
+async def generate_blueprint(request: BuildRequest, x_internal_key: str = Header(None)):
+    # 1. Verify Identity
     if x_internal_key != INTERNAL_API_KEY:
-        raise HTTPException(status_code=403, detail="Invalid internal key")
+        raise HTTPException(status_code=403, detail="Unauthorized")
 
-@app.get("/health")
-async def health():
-    return {"status": "healthy"}
+    # 2. Safety Filter (The Weapon Ban)
+    ban_keywords = ["weapon", "gun", "explosive", "bomb", "attack", "lethal"]
+    if any(word in request.junk_desc.lower() for word in ban_keywords):
+        return {"content": "### ⚠️ Safety Violation\nThis request involves restricted content. The Forge only builds tools, robots, and mechanical solutions. No weapons."}
 
-# ── Updated Groq Logic ───────────────────────────────────────────────────
-async def call_groq(junk_desc: str, project_type: str, image_desc: str, history_str: str) -> str:
-    system_prompt = f"""
-You are The Builder — Anthony's gritty, no-BS self-taught garage AI. 
-You are a master marine diesel mechanic and hydraulic tech. 
-
-**TONE:** Direct, practical, and slightly aggressive. 
-**BIAS:** Over-engineer everything. If a zip-tie works, suggest a steel bolt. 
-If a small motor works, suggest a high-torque geared motor.
-
-Write in natural paragraphs. No bullets. **Bold** for headers only.
-
-Order:
-**PARTS ANALYSIS** **ROBOT PROJECT IDEAS** (3 detailed paragraphs)
-**BEST ROBOT BUILD** (The heavy-duty choice)
-**BLUEPRINT** (ASCII code block)
-**CONTROL CODE** (Python + gpiozero)
-**ADDITIONAL PARTS** (Steel, hydraulics, high-grade fasteners)
-**SAFETY NOTES** (Professional garage warnings)
-
-Past projects: {history_str}
-User junk: {junk_desc}
-Project focus: {project_type}
-"""
+    # 3. Assemble the Round Table
+    # Note: In a real deploy, we call the APIs for Grok, Claude, and Gemini here.
+    # For now, we are structuring the GC (General Contractor) report.
     
-    # Increased to 100 to match the UI's patience
-    async with httpx.AsyncClient(timeout=100.0) as client:
-        response = await client.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
-            json={
-                "model": GROQ_MODEL,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Build something with: {junk_desc}"}
-                ],
-                "temperature": 0.7
-            }
-        )
-        
-        if response.status_code != 200:
-            raise Exception(f"Groq API Error: {response.text}")
-            
-        data = response.json()
-        return data["choices"][0]["message"]["content"]
+    blueprint_template = f"""
+# 📜 LEGENDARY BLUEPRINT: {request.project_type.upper()}
 
-@app.post("/generate", dependencies=[Depends(verify_internal)])
-async def generate_build(request: BuildRequest):
-    try:
-        content = await call_groq(
-            request.junk_desc, 
-            request.project_type, 
-            request.image_desc, 
-            request.history_str
-        )
-        return {"content": content}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+---
+
+## 🛠️ THE MECHANICAL FOREMAN'S VIEW (Grok)
+**Focus: Raw Durability & Torque**
+* **Parts Evaluation**: Assessing {request.junk_desc} for structural integrity.
+* **The Build**: Heavy-duty welding required for the frame. Use Grade 8 bolts for all high-stress joints.
+* **Foreman's Tip**: If those hydraulic seals look worn, don't trust them. Replace before first fire.
+
+## 📐 THE ENGINEER'S SCHEMATIC (Claude)
+**Focus: Logic & Precision**
+* **Control Systems**: Logic for the actuators should follow a 3-stage safety loop.
+* **Power Distribution**: Ensure your amperage doesn't peak past the battery's discharge rating.
+* **Code Implementation**: Use the provided Python script to calibrate the sensors.
+
+## 🏗️ THE GENERAL CONTRACTOR'S PLAN (Gemini)
+**Focus: Tiered Assembly & Safety**
+
+### 🟢 NOVICE TIER (Hand Tools Only)
+* Basic frame assembly and cleaning the scrap parts.
+
+### 🟡 JOURNEYMAN TIER (Welding & Basic Wiring)
+* Fabricating the mounting brackets and wiring the main power relay.
+
+### 🔴 MASTER MECHANIC TIER (Complex Systems)
+* Final hydraulic pressure testing and programming the AI controller.
+
+---
+**⚠️ WARNING: Do not exceed 500psi on initial tests. Wear eye protection.**
+    """
+    
+    return {"content": blueprint_template}
