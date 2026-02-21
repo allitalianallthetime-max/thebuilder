@@ -17,7 +17,6 @@ services:
         sync: false
       - key: PYTHON_VERSION
         value: 3.11.7
-
   # ── 2. THE AI ROUND TABLE (GC, Grok, Claude) ───────────────────────────────
   - type: web
     name: builder-ai
@@ -28,7 +27,7 @@ services:
     envVars:
       - key: INTERNAL_API_KEY
         fromService:
-          type: env
+          type: web
           name: builder-ui
           key: INTERNAL_API_KEY
       - key: OPENAI_API_KEY
@@ -37,7 +36,6 @@ services:
         sync: false
       - key: XAI_API_KEY
         sync: false
-
   # ── 3. THE SECURITY GUARD (Auth) ───────────────────────────────────────────
   - type: web
     name: builder-auth
@@ -52,10 +50,9 @@ services:
           property: connectionString
       - key: INTERNAL_API_KEY
         fromService:
-          type: env
+          type: web
           name: builder-ui
           key: INTERNAL_API_KEY
-
 # ── 4. THE STORAGE TANK (Database) ───────────────────────────────────────────
 databases:
   - name: builder-db
