@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+httpx
+stripe
+PyJWT
+psycopg2-binary
+pydantic
+pydantic-settings
+python-dotenv
