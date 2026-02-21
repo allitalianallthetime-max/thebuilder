@@ -14,7 +14,7 @@ services:
       - key: INTERNAL_API_KEY
         generateValue: true
       - key: MASTER_KEY
-        sync: false # Set your garage password in Render
+        sync: false
       - key: PYTHON_VERSION
         value: 3.11.7
 
@@ -33,9 +33,9 @@ services:
           key: INTERNAL_API_KEY
       - key: OPENAI_API_KEY
         sync: false
-      - key: ANTHROPIC_API_KEY # For Claude
+      - key: ANTHROPIC_API_KEY
         sync: false
-      - key: XAI_API_KEY # For Grok
+      - key: XAI_API_KEY
         sync: false
 
   # ── 3. THE SECURITY GUARD (Auth) ───────────────────────────────────────────
