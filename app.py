@@ -6,7 +6,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ── Configuration Check ──────────────────────────────────────────────────────
-# These match the names we set in your Render environment variables
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL")
 AI_SERVICE_URL = os.getenv("AI_SERVICE_URL")
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
@@ -26,13 +25,13 @@ def login():
     key_input = st.text_input("Access Key", type="password")
     
     if st.button("Open Garage"):
-        # Check Master Key first (No database needed)
+        # Check Master Key override first
         if MASTER_KEY and key_input == MASTER_KEY:
             st.session_state.authenticated = True
             st.success("Master override accepted. Welcome back, Anthony.")
             st.rerun()
         else:
-            # Try to verify with the Auth Service database
+            # Verify with the Auth Service
             try:
                 headers = {"x-internal-key": INTERNAL_API_KEY}
                 response = httpx.post(
@@ -47,7 +46,7 @@ def login():
                 else:
                     st.error("Access Denied. Key not recognized.")
             except Exception as e:
-                st.error(f"Auth Service is offline: {e}")
+                st.error(f"Auth Service connection failed: {e}")
 
 # ── Dashboard (The Forge) ────────────────────────────────────────────────────
 def main_dashboard():
@@ -62,14 +61,20 @@ def main_dashboard():
     
     with tab1:
         st.header("Start a Build")
-        junk_input = st.text_area("What parts are on the workbench?", placeholder="Old diesel engine, hydraulic rams, scrap plate...")
-        project_type = st.selectbox("What are we building?", ["Combat Robot", "Shop Tool", "Hydraulic Lift"])
+        junk_input = st.text_area(
+            "What parts are on the workbench?", 
+            placeholder="Example: Old diesel engine, hydraulic rams, scrap plate..."
+        )
+        project_type = st.selectbox(
+            "What are we building?", 
+            ["Combat Robot", "Shop Tool", "Hydraulic Lift", "Custom Vehicle Mod"]
+        )
         
         if st.button("Forge It"):
             if not junk_input:
                 st.warning("I need a parts list to start the build.")
             else:
-                with st.spinner("AI is crunching the mechanics..."):
+                with st.spinner("The AI is over-engineering the mechanics..."):
                     try:
                         headers = {"x-internal-key": INTERNAL_API_KEY}
                         ai_response = httpx.post(
@@ -81,15 +86,15 @@ def main_dashboard():
                         if ai_response.status_code == 200:
                             st.markdown(ai_response.json()["content"])
                         else:
-                            st.error("AI service failed to respond.")
+                            st.error(f"AI service error: {ai_response.status_code}")
                     except Exception as e:
                         st.error(f"Cannot reach AI Service: {e}")
 
     with tab2:
         st.header("Previous Blueprints")
-        st.info("Build history is currently syncing with the database.")
+        st.info("Build history will be available once the database sync is complete.")
 
-# ── Routing ──────────────────────────────────────────────────────────────────
+# ── Routing Logic ───────────────────────────────────────────────────────────
 if not st.session_state.authenticated:
     login()
 else:
