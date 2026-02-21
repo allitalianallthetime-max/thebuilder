@@ -1,42 +1,38 @@
 import streamlit as st
 import os
 import httpx
-import jwt
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# ── Configuration & Environment Check ─────────────────────────────────────────
+# ── Configuration Check ──────────────────────────────────────────────────────
+# These match the names we set in your Render environment variables
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL")
 AI_SERVICE_URL = os.getenv("AI_SERVICE_URL")
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
 MASTER_KEY = os.getenv("MASTER_KEY")
-
-# Safety check to prevent the pink error box
-if not MASTER_KEY:
-    st.error("Server misconfigured: MASTER_KEY environment variable not set.")
-    st.stop()
 
 # ── Page Setup ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="The Builder", page_icon="🔧", layout="wide")
 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
-if "token" not in st.session_state:
-    st.session_state.token = None
 
-# ── Login Logic ──────────────────────────────────────────────────────────────
+# ── Login Screen ─────────────────────────────────────────────────────────────
 def login():
     st.title("🔧 The Builder: Garage Access")
-    key_input = st.text_input("Enter License Key", type="password")
+    st.write("Enter your master key or license to start the forge.")
     
-    if st.button("Access Forge"):
-        if key_input == MASTER_KEY:
+    key_input = st.text_input("Access Key", type="password")
+    
+    if st.button("Open Garage"):
+        # Check Master Key first (No database needed)
+        if MASTER_KEY and key_input == MASTER_KEY:
             st.session_state.authenticated = True
-            st.success("Master override accepted.")
+            st.success("Master override accepted. Welcome back, Anthony.")
             st.rerun()
         else:
-            # Check with Auth Service
+            # Try to verify with the Auth Service database
             try:
                 headers = {"x-internal-key": INTERNAL_API_KEY}
                 response = httpx.post(
@@ -46,16 +42,14 @@ def login():
                     timeout=10.0
                 )
                 if response.status_code == 200:
-                    data = response.json()
-                    st.session_state.token = data["token"]
                     st.session_state.authenticated = True
                     st.rerun()
                 else:
-                    st.error("Invalid Key. Access Denied.")
+                    st.error("Access Denied. Key not recognized.")
             except Exception as e:
-                st.error(f"Communication error with Auth Service: {e}")
+                st.error(f"Auth Service is offline: {e}")
 
-# ── Main Dashboard ───────────────────────────────────────────────────────────
+# ── Dashboard (The Forge) ────────────────────────────────────────────────────
 def main_dashboard():
     st.sidebar.title("Anthony's Garage")
     if st.sidebar.button("Log Out"):
@@ -68,14 +62,14 @@ def main_dashboard():
     
     with tab1:
         st.header("Start a Build")
-        junk_input = st.text_area("What junk are we using today?", placeholder="Old diesel parts, hydraulic pump, scrap steel...")
-        project_type = st.selectbox("What are we making?", ["Combat Robot", "Industrial Tool", "Garage Utility"])
+        junk_input = st.text_area("What parts are on the workbench?", placeholder="Old diesel engine, hydraulic rams, scrap plate...")
+        project_type = st.selectbox("What are we building?", ["Combat Robot", "Shop Tool", "Hydraulic Lift"])
         
         if st.button("Forge It"):
             if not junk_input:
-                st.warning("I can't build something out of nothing. Put your parts in the list.")
+                st.warning("I need a parts list to start the build.")
             else:
-                with st.spinner("The AI is over-engineering your build..."):
+                with st.spinner("AI is crunching the mechanics..."):
                     try:
                         headers = {"x-internal-key": INTERNAL_API_KEY}
                         ai_response = httpx.post(
@@ -87,13 +81,13 @@ def main_dashboard():
                         if ai_response.status_code == 200:
                             st.markdown(ai_response.json()["content"])
                         else:
-                            st.error("The Brain stalled. Try again.")
+                            st.error("AI service failed to respond.")
                     except Exception as e:
-                        st.error(f"AI Service is unresponsive: {e}")
+                        st.error(f"Cannot reach AI Service: {e}")
 
     with tab2:
         st.header("Previous Blueprints")
-        st.info("Build history will appear here once the database sync is complete.")
+        st.info("Build history is currently syncing with the database.")
 
 # ── Routing ──────────────────────────────────────────────────────────────────
 if not st.session_state.authenticated:
