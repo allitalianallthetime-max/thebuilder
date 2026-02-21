@@ -6,14 +6,16 @@ uvicorn
 # HTTP & API Communications
 requests
 httpx
+stripe
 
 # Data & Security
 pydantic
 pydantic-settings
 python-dotenv
 cryptography
+PyJWT
 
-# Database (PostgreSQL support for future-proofing)
+# Database
 psycopg2-binary
 
 # Styling & UI Components
