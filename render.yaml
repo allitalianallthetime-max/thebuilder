@@ -1,6 +1,24 @@
 services:
-  # ... (builder-ui stays the same)
-  
+  # ── 1. THE DASHBOARD (UI) ──────────────────────────────────────────────────
+  - type: web
+    name: builder-ui
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run app.py
+    envVars:
+      - key: AUTH_SERVICE_URL
+        value: http://builder-auth:10000
+      - key: AI_SERVICE_URL
+        value: http://builder-ai:10000
+      - key: INTERNAL_API_KEY
+        generateValue: true
+      - key: MASTER_KEY
+        sync: false # Set your garage password in Render
+      - key: PYTHON_VERSION
+        value: 3.11.7
+
+  # ── 2. THE AI ROUND TABLE (GC, Grok, Claude) ───────────────────────────────
   - type: web
     name: builder-ai
     runtime: python
@@ -10,8 +28,8 @@ services:
     envVars:
       - key: INTERNAL_API_KEY
         fromService:
-          name: builder-ui
           type: env
+          name: builder-ui
           key: INTERNAL_API_KEY
       - key: OPENAI_API_KEY
         sync: false
@@ -19,5 +37,27 @@ services:
         sync: false
       - key: XAI_API_KEY # For Grok
         sync: false
-      - key: GEMINI_API_KEY # For Me
-        sync: false
+
+  # ── 3. THE SECURITY GUARD (Auth) ───────────────────────────────────────────
+  - type: web
+    name: builder-auth
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn auth_service:app --host 0.0.0.0 --port 10000
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: builder-db
+          property: connectionString
+      - key: INTERNAL_API_KEY
+        fromService:
+          type: env
+          name: builder-ui
+          key: INTERNAL_API_KEY
+
+# ── 4. THE STORAGE TANK (Database) ───────────────────────────────────────────
+databases:
+  - name: builder-db
+    plan: free
+    postgresMajorVersion: 15
