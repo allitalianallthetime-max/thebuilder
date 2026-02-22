@@ -1,4 +1,5 @@
 services:
+  # ── 1. THE DASHBOARD (UI) ──────────────────────────────────────────────────
   - type: web
     name: builder-ui
     runtime: python
@@ -11,11 +12,13 @@ services:
       - key: AI_SERVICE_URL
         value: http://builder-ai:10000
       - key: INTERNAL_API_KEY
-        generateValue: true
+        value: 254e4f3f084b4414d43c01edb3e26df0  # <── YOUR CUSTOM KEY HERE
       - key: MASTER_KEY
         sync: false
       - key: PYTHON_VERSION
         value: 3.11.7
+
+  # ── 2. THE AI ROUND TABLE (GC, Grok, Claude) ───────────────────────────────
   - type: web
     name: builder-ai
     runtime: python
@@ -24,16 +27,15 @@ services:
     startCommand: uvicorn ai_service:app --host 0.0.0.0 --port 10000
     envVars:
       - key: INTERNAL_API_KEY
-        fromService:
-          type: web
-          name: builder-ui
-          envVarKey: INTERNAL_API_KEY
+        value: BlackoutLogistics2026!  # <── MUST MATCH THE UI KEY
       - key: OPENAI_API_KEY
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: XAI_API_KEY
         sync: false
+
+  # ── 3. THE SECURITY GUARD (Auth) ───────────────────────────────────────────
   - type: web
     name: builder-auth
     runtime: python
@@ -46,10 +48,9 @@ services:
           name: builder-db
           property: connectionString
       - key: INTERNAL_API_KEY
-        fromService:
-          type: web
-          name: builder-ui
-          envVarKey: INTERNAL_API_KEY
+        value: BlackoutLogistics2026!  # <── MUST MATCH THE UI KEY
+
+# ── 4. THE STORAGE TANK (Database) ───────────────────────────────────────────
 databases:
   - name: builder-db
     plan: free
