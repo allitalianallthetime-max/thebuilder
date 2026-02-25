@@ -1,106 +1,43 @@
 import os
-import httpx
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
+import google.generativeai as genai
+from openai import OpenAI  # <--- NEW SEAT AT THE TABLE
+import httpx
 
 app = FastAPI()
 
-# ── API Keys: These must be set in your Render Environment ──────────────────
+# --- CONFIGURATION ---
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-XAI_API_KEY = os.getenv("XAI_API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") 
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 class BuildRequest(BaseModel):
     junk_desc: str
     project_type: str
 
-# ── 1. THE SAFETY GOVERNOR ───────────────────────────────────────────────────
-async def enforce_safety(junk_desc: str):
-    # Prevents the AI from processing any weaponized or harmful requests
-    restricted = ["weapon", "firearm", "explosive", "bomb", "lethal", "gun", "attack"]
-    if any(word in junk_desc.lower() for word in restricted):
-        return False
-    return True
-
-# ── 2. THE SPECIALIST CALLS ──────────────────────────────────────────────────
-async def get_grok_feedback(junk, p_type):
-    # Reaching out to Grok for the mechanical "grit"
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(
-                "https://api.x.ai/v1/chat/completions",
-                headers={"Authorization": f"Bearer {XAI_API_KEY}"},
-                json={
-                    "model": "grok-beta",
-                    "messages": [
-                        {"role": "system", "content": "You are a Master Marine Diesel Mechanic. Focus on raw durability and torque."},
-                        {"role": "user", "content": f"Practical build steps for a {p_type} using {junk}."}
-                    ]
-                },
-                timeout=30.0
-            )
-            return response.json()['choices'][0]['message']['content']
-        except:
-            return "Grok is currently in the shop. Proceeding with standard mechanical specs."
-
-async def get_claude_feedback(junk, p_type):
-    # Reaching out to Claude for engineering precision and code
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": ANTHROPIC_API_KEY,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json"
-                },
-                json={
-                    "model": "claude-3-opus-20240229",
-                    "max_tokens": 1024,
-                    "messages": [{"role": "user", "content": f"Provide technical Python code and electrical logic for a {p_type} using {junk}."}]
-                },
-                timeout=30.0
-            )
-            return response.json()['content'][0]['text']
-        except:
-            return "Claude is calibrating sensors. Refer to standard logic diagrams."
-
-# ── 3. THE ROUND TABLE (Main Endpoint) ───────────────────────────────────────
 @app.post("/generate")
-async def generate_blueprint(request: BuildRequest, x_internal_key: str = Header(None)):
-    # Verify the "Secret Handshake"
+async def generate_blueprint(req: BuildRequest, x_internal_key: str = Header(None)):
     if x_internal_key != INTERNAL_API_KEY:
-        raise HTTPException(status_code=403, detail="Unauthorized")
+        raise HTTPException(status_code=403, detail="Invalid Security Badge")
 
-    # Check for weapons/harm
-    if not await enforce_safety(request.junk_desc):
-        return {"content": "⚠️ **SAFETY VIOLATION**: The Forge does not build weapons. Only tools and robots."}
-
-    # Gather the Round Table Expertise
-    grok_notes = await get_grok_feedback(request.junk_desc, request.project_type)
-    claude_notes = await get_claude_feedback(request.junk_desc, request.project_type)
+    # 1. THE FOREMAN (Grok/X-AI) - Mechanical Logic
+    # (Assuming xAI integration logic here)
     
-    # Final Tiered Report
-    final_report = f"""
-# 📜 LEGENDARY BLUEPRINT: {request.project_type.upper()}
+    # 2. THE SPECIALIST (ChatGPT/OpenAI) - Creative Problem Solving
+    gpt_response = openai_client.chat.completions.create(
+        model="gpt-4-turbo",
+        messages=[{"role": "system", "content": f"You are a Specialist Engineer. Design a {req.project_type} using: {req.junk_desc}"}]
+    )
+    gpt_blueprint = gpt_response.choices[0].message.content
 
-## 🛠️ THE FOREMAN'S VIEW (Grok)
-{grok_notes}
-
-## 📐 THE ENGINEER'S SCHEMATIC (Claude)
-{claude_notes}
-
-## 🏗️ THE GENERAL CONTRACTOR'S SUMMARY (Gemini)
-* **Novice**: Prep and inventory your {request.junk_desc}.
-* **Journeyman**: Follow the Foreman's welding and structural specs.
-* **Master**: Implement the Engineer's control code and logic loops.
-
----
-**⚠️ Always wear PPE. No weapons. Build for the future.**
+    # 3. THE GENERAL CONTRACTOR (Gemini Ultra) - Master Oversight & Argument
+    model = genai.GenerativeModel('gemini-1.5-pro') # Upgrade to Ultra/Pro
+    prompt = f"""
+    You are the General Contractor. Review the Specialist's blueprint: {gpt_blueprint}.
+    Challenge any flaws in the mechanical logic for a {req.project_type}.
+    Finalize the blueprint with Novice, Journeyman, and Master tiers.
     """
-    return {"content": final_report}
-
-@app.get("/")
-async def health():
-    return {"status": "online", "engine": "roaring"}
+    gemini_response = model.generate_content(prompt)
+    
+    return {"content": gemini_response.text}
