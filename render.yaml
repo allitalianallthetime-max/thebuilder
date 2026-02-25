@@ -197,5 +197,5 @@ services:
 # ── 8. THE STORAGE TANK (Database) ───────────────────────────────────────────
 databases:
   - name: builder-db
-    plan: standard
-    postgresMajorVersion: 15
+plan: basic-256mb
+postgresMajorVersion: 16
