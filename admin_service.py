@@ -33,9 +33,18 @@ app = FastAPI()
 MASTER_KEY         = os.getenv("MASTER_KEY")
 INTERNAL_API_KEY   = os.getenv("INTERNAL_API_KEY")
 DATABASE_URL       = os.getenv("DATABASE_URL")
-AUTH_SERVICE_URL   = os.getenv("AUTH_SERVICE_URL")
-AI_SERVICE_URL     = os.getenv("AI_SERVICE_URL")
-ANALYTICS_URL      = os.getenv("ANALYTICS_SERVICE_URL", "http://builder-analytics:10000")
+
+def normalize_url(raw: str, default: str) -> str:
+    if not raw:
+        return default
+    raw = raw.strip()
+    if raw.startswith("http://") or raw.startswith("https://"):
+        return raw
+    return f"http://{raw}:10000"
+
+AUTH_SERVICE_URL   = normalize_url(os.getenv("AUTH_SERVICE_URL", ""), "http://builder-auth:10000")
+AI_SERVICE_URL     = normalize_url(os.getenv("AI_SERVICE_URL", ""),  "http://builder-ai:10000")
+ANALYTICS_URL      = normalize_url(os.getenv("ANALYTICS_SERVICE_URL", ""), "http://builder-analytics:10000")
 
 @contextmanager
 def get_db():
