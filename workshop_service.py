@@ -38,12 +38,14 @@ import logging
 import psycopg2
 import psycopg2.pool
 import google.generativeai as genai
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, File, UploadFile, Form
 from pydantic import BaseModel
 from typing import Optional, List
 from contextlib import contextmanager
 from datetime import datetime
 from dotenv import load_dotenv
+import base64
+import re
 
 load_dotenv()
 
@@ -192,6 +194,24 @@ def init_db():
                     created_at   TIMESTAMP DEFAULT NOW()
                 )
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS equipment_scans (
+                    id              SERIAL PRIMARY KEY,
+                    user_email      TEXT DEFAULT 'anonymous',
+                    image_hash      TEXT,
+                    equipment_name  TEXT,
+                    manufacturer    TEXT,
+                    model           TEXT,
+                    year_range      TEXT,
+                    category        TEXT,
+                    scan_result     JSONB,
+                    parts_found     INTEGER DEFAULT 0,
+                    est_salvage     REAL DEFAULT 0,
+                    hazard_level    TEXT DEFAULT 'low',
+                    status          TEXT DEFAULT 'scanned',
+                    created_at      TIMESTAMP DEFAULT NOW()
+                )
+            """)
             conn.commit()
     log.info("Workshop tables initialized.")
 
@@ -238,6 +258,11 @@ class UpdatePartRequest(BaseModel):
 class AnalyzePartsRequest(BaseModel):
     junk_desc:    str
     project_type: str = ""
+
+class ScanImageRequest(BaseModel):
+    image_base64: str
+    user_email:   str = "anonymous"
+    context:      str = ""
 
 # ══════════════════════════════════════════════════════════════════════════════
 #   AI PARTS INTELLIGENCE
@@ -872,4 +897,416 @@ async def workshop_stats(x_internal_key: str = Header(None)):
         "by_phase":         by_phase,
         "total_est_cost":   total_est_cost,
         "avg_difficulty":   avg_difficulty
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#   X-RAY SCANNER — AI Vision Equipment Analysis
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def ai_vision_scan(image_bytes: bytes, mime_type: str, context: str = "") -> dict:
+    """Use Gemini Vision to identify equipment from a photo and perform
+    a complete engineering teardown — specs, schematics, parts, hazards."""
+    try:
+        model = genai.GenerativeModel("gemini-2.0-flash")
+
+        context_line = f"\nADDITIONAL CONTEXT FROM USER: {context}" if context else ""
+
+        prompt = f"""You are an elite industrial equipment forensic analyst, master mechanic,
+and salvage engineer. You have 30 years of experience tearing down every kind of
+industrial, medical, military, automotive, and commercial equipment.
+
+A photo of equipment has been uploaded. Analyze it with extreme detail.
+{context_line}
+
+YOUR MISSION — Perform a COMPLETE X-RAY SCAN:
+
+1. IDENTIFY the equipment: manufacturer, model, year/era, original purpose
+2. FIND THE SCHEMATICS: Describe the internal schematic layout — what's inside,
+   how the systems connect, power flow, fluid paths, signal chains
+3. COMPONENT TEARDOWN: List EVERY salvageable component visible or reasonably
+   expected to be inside this equipment
+4. SPECIFICATIONS: Voltages, pressures, flow rates, dimensions, weight, power ratings
+5. HAZARD ASSESSMENT: Any dangerous materials (asbestos, lead, mercury, refrigerants,
+   capacitors, radiation sources, pressurized vessels, biohazards)
+6. SALVAGE VALUE: Estimate the value of key components on the used market
+
+Return ONLY a valid JSON object with this EXACT structure (no markdown, no backticks):
+
+{{
+    "identification": {{
+        "equipment_name": "Full name of the equipment",
+        "manufacturer": "Manufacturer/brand name",
+        "model": "Model number or series",
+        "year_range": "Approximate year or range (e.g. 2005-2012)",
+        "category": "one of: medical, industrial, automotive, military, commercial, electrical, hvac, marine, agricultural, computing, telecom, laboratory, other",
+        "original_purpose": "What this equipment was designed to do",
+        "common_names": ["Other names this equipment goes by"]
+    }},
+    "schematics": {{
+        "system_overview": "High-level description of how this machine works internally",
+        "power_system": "How power enters and distributes through the machine",
+        "control_system": "How the machine is controlled — PCBs, microcontrollers, relays, pneumatics",
+        "fluid_systems": "Any hydraulic, pneumatic, coolant, gas, or liquid systems",
+        "mechanical_systems": "Drive trains, gears, bearings, actuators, linkages",
+        "electrical_diagram": "ASCII representation of the main electrical flow path",
+        "signal_chain": "How sensors, controllers, and actuators communicate"
+    }},
+    "specifications": {{
+        "power_input": "e.g. 120V AC 60Hz 15A",
+        "power_consumption": "e.g. 1800W",
+        "dimensions": "L x W x H approximate",
+        "weight": "Approximate weight",
+        "operating_pressure": "If applicable",
+        "flow_rates": "If applicable",
+        "other_specs": ["Any other notable specifications"]
+    }},
+    "components": [
+        {{
+            "name": "Component name",
+            "category": "structural/electrical/mechanical/hydraulic/pneumatic/sensor/motor/pump/valve/wiring/electronic/raw_material/optical/thermal/other",
+            "quantity": 1,
+            "location": "Where in the machine this component is found",
+            "condition_notes": "Expected condition based on equipment type and age",
+            "salvage_value": 0.00,
+            "reuse_potential": "high/medium/low",
+            "specifications": "Key specs of this specific component"
+        }}
+    ],
+    "hazards": {{
+        "level": "none/low/medium/high/critical",
+        "warnings": ["Specific hazard warning 1", "Specific hazard warning 2"],
+        "required_ppe": ["PPE item 1", "PPE item 2"],
+        "disposal_notes": "Special disposal requirements for hazardous components",
+        "lockout_tagout": "Lockout/tagout requirements before teardown"
+    }},
+    "salvage_assessment": {{
+        "total_estimated_value": 0.00,
+        "high_value_components": ["Component 1 ($XX)", "Component 2 ($XX)"],
+        "scrap_metal_value": 0.00,
+        "teardown_difficulty": 7,
+        "teardown_hours": 8.0,
+        "required_tools": ["Tool 1", "Tool 2", "Tool 3"],
+        "recommended_approach": "Step-by-step teardown strategy"
+    }},
+    "build_potential": [
+        "What this equipment could be repurposed into — idea 1",
+        "What this equipment could be repurposed into — idea 2",
+        "What this equipment could be repurposed into — idea 3"
+    ]
+}}
+
+Be thorough and precise. If you can't identify the exact model, give your best assessment
+based on visual cues. Extract EVERY component you can identify or reasonably infer.
+Return ONLY valid JSON."""
+
+        # Build the multimodal request
+        image_part = {
+            "inline_data": {
+                "mime_type": mime_type,
+                "data": base64.b64encode(image_bytes).decode("utf-8")
+            }
+        }
+
+        response = await model.generate_content_async([prompt, image_part])
+        text = response.text.strip()
+
+        # Strip markdown fences
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+        if text.startswith("json"):
+            text = text[4:]
+        text = text.strip()
+
+        result = json.loads(text)
+        log.info(f"Vision scan complete: {result.get('identification', {}).get('equipment_name', 'Unknown')}")
+        return result
+
+    except json.JSONDecodeError as e:
+        log.error(f"Vision AI returned invalid JSON: {e}")
+        return {
+            "identification": {"equipment_name": "Analysis Error", "manufacturer": "Unknown",
+                               "model": "Unknown", "year_range": "", "category": "other",
+                               "original_purpose": "Could not parse AI response", "common_names": []},
+            "schematics": {}, "specifications": {}, "components": [],
+            "hazards": {"level": "unknown", "warnings": ["Scan failed — inspect manually"], "required_ppe": [], "disposal_notes": "", "lockout_tagout": ""},
+            "salvage_assessment": {"total_estimated_value": 0, "high_value_components": [],
+                                   "scrap_metal_value": 0, "teardown_difficulty": 5,
+                                   "teardown_hours": 0, "required_tools": [], "recommended_approach": ""},
+            "build_potential": [],
+            "error": f"JSON parse error: {str(e)}"
+        }
+    except Exception as e:
+        log.error(f"Vision scan failed: {e}")
+        return {
+            "identification": {"equipment_name": "Scan Failed", "manufacturer": "Unknown",
+                               "model": "Unknown", "year_range": "", "category": "other",
+                               "original_purpose": str(e), "common_names": []},
+            "schematics": {}, "specifications": {}, "components": [],
+            "hazards": {"level": "unknown", "warnings": [], "required_ppe": [], "disposal_notes": "", "lockout_tagout": ""},
+            "salvage_assessment": {"total_estimated_value": 0, "high_value_components": [],
+                                   "scrap_metal_value": 0, "teardown_difficulty": 5,
+                                   "teardown_hours": 0, "required_tools": [], "recommended_approach": ""},
+            "build_potential": [],
+            "error": str(e)
+        }
+
+
+def save_scan(user_email: str, image_hash: str, result: dict) -> int:
+    """Save a scan result to the database."""
+    ident = result.get("identification", {})
+    hazards = result.get("hazards", {})
+    salvage = result.get("salvage_assessment", {})
+
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO equipment_scans
+                        (user_email, image_hash, equipment_name, manufacturer, model,
+                         year_range, category, scan_result, parts_found,
+                         est_salvage, hazard_level)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id
+                """, (
+                    user_email,
+                    image_hash,
+                    ident.get("equipment_name", "Unknown"),
+                    ident.get("manufacturer", "Unknown"),
+                    ident.get("model", "Unknown"),
+                    ident.get("year_range", ""),
+                    ident.get("category", "other"),
+                    json.dumps(result),
+                    len(result.get("components", [])),
+                    salvage.get("total_estimated_value", 0),
+                    hazards.get("level", "unknown")
+                ))
+                scan_id = cur.fetchone()[0]
+                conn.commit()
+                return scan_id
+    except Exception as e:
+        log.error(f"Failed to save scan: {e}")
+        return None
+
+
+# ── SCANNER ENDPOINTS ─────────────────────────────────────────────────────────
+
+@app.post("/scan/upload")
+async def scan_uploaded_image(
+    file: UploadFile = File(...),
+    user_email: str = Form("anonymous"),
+    context: str = Form(""),
+    x_internal_key: str = Header(None)
+):
+    """Upload an image file for X-Ray scanning.
+    Accepts JPEG, PNG, WebP. Max ~20MB (Gemini limit)."""
+    await verify(x_internal_key)
+
+    allowed = {"image/jpeg", "image/png", "image/webp", "image/jpg"}
+    content_type = file.content_type or "image/jpeg"
+    if content_type not in allowed:
+        raise HTTPException(status_code=400,
+            detail=f"Unsupported image type: {content_type}. Use JPEG, PNG, or WebP.")
+
+    image_bytes = await file.read()
+    if len(image_bytes) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Image too large. Max 20MB.")
+    if len(image_bytes) < 1000:
+        raise HTTPException(status_code=400, detail="Image too small or corrupt.")
+
+    log.info(f"Scanning image: {file.filename} ({len(image_bytes)} bytes) for {user_email}")
+
+    # Hash for dedup
+    import hashlib
+    image_hash = hashlib.md5(image_bytes).hexdigest()
+
+    # Run AI vision analysis
+    result = await ai_vision_scan(image_bytes, content_type, context)
+
+    # Save to database
+    scan_id = await asyncio.to_thread(save_scan, user_email, image_hash, result)
+
+    ident = result.get("identification", {})
+    components = result.get("components", [])
+    salvage = result.get("salvage_assessment", {})
+
+    return {
+        "scan_id":        scan_id,
+        "equipment_name": ident.get("equipment_name", "Unknown"),
+        "manufacturer":   ident.get("manufacturer", "Unknown"),
+        "model":          ident.get("model", "Unknown"),
+        "year_range":     ident.get("year_range", ""),
+        "category":       ident.get("category", "other"),
+        "parts_found":    len(components),
+        "est_salvage":    salvage.get("total_estimated_value", 0),
+        "hazard_level":   result.get("hazards", {}).get("level", "unknown"),
+        "scan_result":    result
+    }
+
+
+@app.post("/scan/base64")
+async def scan_base64_image(req: ScanImageRequest, x_internal_key: str = Header(None)):
+    """Scan an image provided as base64 string (for Streamlit integration)."""
+    await verify(x_internal_key)
+
+    # Strip data URI prefix if present
+    b64 = req.image_base64
+    mime_type = "image/jpeg"
+
+    if b64.startswith("data:"):
+        match = re.match(r"data:(image/\w+);base64,(.+)", b64, re.DOTALL)
+        if match:
+            mime_type = match.group(1)
+            b64 = match.group(2)
+
+    try:
+        image_bytes = base64.b64decode(b64)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 image data")
+
+    if len(image_bytes) < 1000:
+        raise HTTPException(status_code=400, detail="Image too small or corrupt.")
+
+    log.info(f"Scanning base64 image ({len(image_bytes)} bytes) for {req.user_email}")
+
+    import hashlib
+    image_hash = hashlib.md5(image_bytes).hexdigest()
+
+    result = await ai_vision_scan(image_bytes, mime_type, req.context)
+    scan_id = await asyncio.to_thread(save_scan, req.user_email, image_hash, result)
+
+    ident = result.get("identification", {})
+    return {
+        "scan_id":        scan_id,
+        "equipment_name": ident.get("equipment_name", "Unknown"),
+        "manufacturer":   ident.get("manufacturer", "Unknown"),
+        "model":          ident.get("model", "Unknown"),
+        "parts_found":    len(result.get("components", [])),
+        "est_salvage":    result.get("salvage_assessment", {}).get("total_estimated_value", 0),
+        "hazard_level":   result.get("hazards", {}).get("level", "unknown"),
+        "scan_result":    result
+    }
+
+
+@app.get("/scans")
+async def list_scans(x_internal_key: str = Header(None),
+                     user_email: str = None, limit: int = 50):
+    """List all equipment scans."""
+    await verify(x_internal_key)
+
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            query = """
+                SELECT id, user_email, equipment_name, manufacturer, model,
+                       year_range, category, parts_found, est_salvage,
+                       hazard_level, status, created_at
+                FROM equipment_scans
+            """
+            params = []
+            if user_email:
+                query += " WHERE user_email = %s"
+                params.append(user_email)
+            query += " ORDER BY created_at DESC LIMIT %s"
+            params.append(limit)
+
+            cur.execute(query, params)
+            rows = cur.fetchall()
+
+    return [
+        {
+            "id": r[0], "user_email": r[1], "equipment_name": r[2],
+            "manufacturer": r[3], "model": r[4], "year_range": r[5],
+            "category": r[6], "parts_found": r[7], "est_salvage": r[8],
+            "hazard_level": r[9], "status": r[10], "created_at": str(r[11])
+        }
+        for r in rows
+    ]
+
+
+@app.get("/scans/{scan_id}")
+async def get_scan(scan_id: int, x_internal_key: str = Header(None)):
+    """Get full scan detail including the complete AI analysis."""
+    await verify(x_internal_key)
+
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, user_email, equipment_name, manufacturer, model,
+                       year_range, category, scan_result, parts_found,
+                       est_salvage, hazard_level, status, created_at
+                FROM equipment_scans WHERE id = %s
+            """, (scan_id,))
+            row = cur.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Scan not found")
+
+    return {
+        "id": row[0], "user_email": row[1], "equipment_name": row[2],
+        "manufacturer": row[3], "model": row[4], "year_range": row[5],
+        "category": row[6], "scan_result": row[7], "parts_found": row[8],
+        "est_salvage": row[9], "hazard_level": row[10], "status": row[11],
+        "created_at": str(row[12])
+    }
+
+
+@app.post("/scans/{scan_id}/to-workbench")
+async def scan_to_workbench(scan_id: int, x_internal_key: str = Header(None)):
+    """Convert a scan into a workbench-ready junk description string
+    that can be pasted directly into the New Build form."""
+    await verify(x_internal_key)
+
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT equipment_name, manufacturer, model, year_range, scan_result
+                FROM equipment_scans WHERE id = %s
+            """, (scan_id,))
+            row = cur.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Scan not found")
+
+    name, mfr, model, year, result = row
+    components = result.get("components", []) if isinstance(result, dict) else []
+    specs = result.get("specifications", {}) if isinstance(result, dict) else {}
+
+    # Build a rich workbench description from the scan
+    lines = [f"{mfr} {model} {name}"]
+    if year:
+        lines[0] += f" ({year})"
+
+    # Add key specs
+    for key in ["power_input", "weight", "dimensions"]:
+        val = specs.get(key)
+        if val:
+            lines.append(f"  Spec: {key.replace('_', ' ').title()}: {val}")
+
+    # Add all identified components
+    if components:
+        lines.append(f"  Components ({len(components)} identified):")
+        for comp in components:
+            if isinstance(comp, dict):
+                cname = comp.get("name", "Unknown")
+                cat   = comp.get("category", "")
+                qty   = comp.get("quantity", 1)
+                spec  = comp.get("specifications", "")
+                entry = f"    - {cname}"
+                if qty > 1:
+                    entry += f" (x{qty})"
+                if cat:
+                    entry += f" [{cat}]"
+                if spec:
+                    entry += f" — {spec}"
+                lines.append(entry)
+
+    workbench_text = "\n".join(lines)
+
+    return {
+        "scan_id":       scan_id,
+        "workbench_text": workbench_text,
+        "equipment_name": name,
+        "parts_count":    len(components)
     }
