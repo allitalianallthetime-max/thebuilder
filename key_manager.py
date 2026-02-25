@@ -1,72 +1,182 @@
-"""
-key_manager.py — Refined for Auth Service
-=========================================
-✅ Removed SMTP in favor of the notification queue logic.
-✅ Added "Safety" checks for database connections.
-✅ Improved the lifecycle logic to prevent double-warning users.
-"""
+services:
+  # ── 1. THE DASHBOARD (UI) ──────────────────────────────────────────────────
+  - type: web
+    name: builder-ui
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements-ui.txt
+    startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0
+    envVars:
+      - key: AUTH_SERVICE_URL
+        fromService:
+          type: web
+          name: builder-auth
+          envVarKey: RENDER_INTERNAL_HOSTNAME
+      - key: AI_SERVICE_URL
+        fromService:
+          type: web
+          name: builder-ai
+          envVarKey: RENDER_INTERNAL_HOSTNAME
+      - key: BILLING_SERVICE_URL
+        fromService:
+          type: web
+          name: builder-billing
+          envVarKey: RENDER_INTERNAL_HOSTNAME
+      - key: ANALYTICS_SERVICE_URL
+        fromService:
+          type: web
+          name: builder-analytics
+          envVarKey: RENDER_INTERNAL_HOSTNAME
+      - key: ADMIN_SERVICE_URL
+        fromService:
+          type: web
+          name: builder-admin
+          envVarKey: RENDER_INTERNAL_HOSTNAME
+      - key: INTERNAL_API_KEY
+        generateValue: true
+      - key: MASTER_KEY
+        sync: false
+      - key: PYTHON_VERSION
+        value: 3.11.7
 
-import sqlite3
-import hashlib
-import os
-from datetime import datetime, timedelta
+  # ── 2. THE AI ROUND TABLE ─────────────────────────────────────────────────
+  - type: web
+    name: builder-ai
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements-services.txt
+    startCommand: uvicorn ai_service:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: INTERNAL_API_KEY
+        fromService:
+          type: web
+          name: builder-ui
+          envVarKey: INTERNAL_API_KEY
+      - key: DATABASE_URL
+        fromDatabase:
+          name: builder-db
+          property: connectionString
+      - key: XAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
 
-# ── Config ────────────────────────────────────────────────────────────────────
-# Ensure this points to a persistent volume or external DB on Render
-DB_FILE = os.environ.get("DATABASE_URL", "builder_licenses.db")
+  # ── 3. THE SECURITY GUARD (Auth) ─────────────────────────────────────────
+  - type: web
+    name: builder-auth
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements-services.txt
+    startCommand: uvicorn auth_service:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: INTERNAL_API_KEY
+        fromService:
+          type: web
+          name: builder-ui
+          envVarKey: INTERNAL_API_KEY
+      - key: DATABASE_URL
+        fromDatabase:
+          name: builder-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
 
-def get_db_connection():
-    """Technician's trick: Ensure the connection handles timeouts better."""
-    conn = sqlite3.connect(DB_FILE, timeout=10)
-    conn.row_factory = sqlite3.Row
-    return conn
+  # ── 4. THE CASH REGISTER (Billing) ───────────────────────────────────────
+  - type: web
+    name: builder-billing
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements-services.txt
+    startCommand: uvicorn billing_service:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: INTERNAL_API_KEY
+        fromService:
+          type: web
+          name: builder-ui
+          envVarKey: INTERNAL_API_KEY
+      - key: AUTH_SERVICE_URL
+        fromService:
+          type: web
+          name: builder-auth
+          envVarKey: RENDER_INTERNAL_HOSTNAME
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SEC
+        sync: false
+      - key: APP_URL
+        sync: false
 
-# ... (generate_license_key and hash_key logic remain solid) ...
+  # ── 5. THE LOGBOOK (Analytics) ────────────────────────────────────────────
+  - type: web
+    name: builder-analytics
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements-services.txt
+    startCommand: uvicorn analytics_service:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: INTERNAL_API_KEY
+        fromService:
+          type: web
+          name: builder-ui
+          envVarKey: INTERNAL_API_KEY
+      - key: DATABASE_URL
+        fromDatabase:
+          name: builder-db
+          property: connectionString
 
-def validate_key(key: str) -> dict:
-    """
-    Checks if a key is valid and how much 'fuel' (days) is left.
-    """
-    key_hash = hash_key(key)
-    with get_db_connection() as conn:
-        row = conn.execute("SELECT * FROM licenses WHERE key_hash = ?", (key_hash,)).fetchone()
+  # ── 6. THE CONTROL ROOM (Admin) ──────────────────────────────────────────
+  - type: web
+    name: builder-admin
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements-services.txt
+    startCommand: uvicorn admin_service:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: MASTER_KEY
+        fromService:
+          type: web
+          name: builder-ui
+          envVarKey: MASTER_KEY
+      - key: INTERNAL_API_KEY
+        fromService:
+          type: web
+          name: builder-ui
+          envVarKey: INTERNAL_API_KEY
+      - key: DATABASE_URL
+        fromDatabase:
+          name: builder-db
+          property: connectionString
+      - key: AUTH_SERVICE_URL
+        fromService:
+          type: web
+          name: builder-auth
+          envVarKey: RENDER_INTERNAL_HOSTNAME
+      - key: AI_SERVICE_URL
+        fromService:
+          type: web
+          name: builder-ai
+          envVarKey: RENDER_INTERNAL_HOSTNAME
 
-    if not row:
-        return {"valid": False, "status": "not_found"}
+  # ── 7. THE PRINT SHOP (Export) ────────────────────────────────────────────
+  - type: web
+    name: builder-export
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements-services.txt
+    startCommand: uvicorn export_service:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: INTERNAL_API_KEY
+        fromService:
+          type: web
+          name: builder-ui
+          envVarKey: INTERNAL_API_KEY
 
-    data = dict(row)
-    now = datetime.utcnow()
-    expiry = datetime.fromisoformat(data["expires_at"])
-    days_left = (expiry - now).days
-
-    if data["status"] == "revoked":
-        return {"valid": False, "status": "revoked"}
-
-    # If past expiry, we mark as invalid but still return data for renewal prompts
-    is_valid = days_left >= 0 and data["status"] != "revoked"
-
-    return {
-        "valid": is_valid,
-        "days_remaining": days_left,
-        "email": data["email"],
-        "name": data["name"],
-        "status": data["status"]
-    }
-
-def run_daily_lifecycle():
-    """
-    The 'Morning Inspection'. 
-    Determines who needs a warning and who gets the 'scrap yard' (deletion).
-    """
-    now = datetime.utcnow()
-    with get_db_connection() as conn:
-        rows = conn.execute("SELECT key_hash, email, name, expires_at, status FROM licenses").fetchall()
-        
-        for row in rows:
-            expiry = datetime.fromisoformat(row["expires_at"])
-            days_over = (now - expiry).days
-            
-            # 45 Days Past Expiry: The 'Scrap Yard'
-            if days_over >= 15:
-                log.info(f"Scrapping data for {row['email']}")
-                # Here we would call the delete_user_data logic
+# ── 8. THE STORAGE TANK (Database) ───────────────────────────────────────────
+databases:
+  - name: builder-db
+    plan: basic
+    postgresMajorVersion: 15
