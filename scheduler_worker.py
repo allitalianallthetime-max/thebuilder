@@ -25,7 +25,16 @@ logging.basicConfig(
 log = logging.getLogger("scheduler")
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-AUTH_SERVICE_URL   = os.environ.get("AUTH_SERVICE_URL")
+def normalize_url(raw: str, default: str) -> str:
+    """Ensure a service URL has protocol and port."""
+    if not raw:
+        return default
+    raw = raw.strip()
+    if raw.startswith("http://") or raw.startswith("https://"):
+        return raw
+    return f"http://{raw}:10000"
+
+AUTH_SERVICE_URL   = normalize_url(os.environ.get("AUTH_SERVICE_URL", ""), "http://builder-auth:10000")
 INTERNAL_API_KEY   = os.environ.get("INTERNAL_API_KEY")
 RESEND_API_KEY     = os.environ.get("RESEND_API_KEY", "")
 FROM_EMAIL         = os.environ.get("FROM_EMAIL", "The Builder <noreply@thebuilder.app>")
