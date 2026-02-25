@@ -33,6 +33,7 @@ BILLING_SERVICE_URL   = normalize_url(os.getenv("BILLING_SERVICE_URL", ""),   "h
 ANALYTICS_SERVICE_URL = normalize_url(os.getenv("ANALYTICS_SERVICE_URL", ""), "http://builder-analytics:10000")
 ADMIN_SERVICE_URL     = normalize_url(os.getenv("ADMIN_SERVICE_URL", ""),     "http://builder-admin:10000")
 EXPORT_SERVICE_URL    = normalize_url(os.getenv("EXPORT_SERVICE_URL", ""),    "http://builder-export:10000")
+WORKSHOP_SERVICE_URL  = normalize_url(os.getenv("WORKSHOP_SERVICE_URL", ""),  "http://builder-workshop:10000")
 INTERNAL_API_KEY      = os.getenv("INTERNAL_API_KEY")
 MASTER_KEY            = os.getenv("MASTER_KEY")
 STRIPE_PAYMENT_URL    = os.getenv("STRIPE_PAYMENT_URL", "#")
@@ -505,6 +506,7 @@ def render_sidebar():
             ("🛡", "AUTH GUARD",     AUTH_SERVICE_URL),
             ("💳", "BILLING",        BILLING_SERVICE_URL),
             ("📊", "ANALYTICS",      ANALYTICS_SERVICE_URL),
+            ("🔩", "WORKSHOP",       WORKSHOP_SERVICE_URL),
             ("🗄", "DATABASE",       None),
         ]
         for icon, label, url in services:
@@ -710,6 +712,36 @@ def tab_new_build():
                 st.session_state.last_junk_input   = None
                 st.rerun()
 
+        # ── SEND TO WORKSHOP ──
+        st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+        if st.button("🔩  SEND TO WORKSHOP — Track This Build"):
+            with st.spinner("Creating workshop project with AI parts analysis..."):
+                try:
+                    r = httpx.post(
+                        f"{WORKSHOP_SERVICE_URL}/projects/create",
+                        json={
+                            "build_id":     st.session_state.last_build_id,
+                            "user_email":   st.session_state.user_email,
+                            "title":        f"{export_type} Build #{st.session_state.last_build_id or 0}",
+                            "project_type": export_type,
+                            "junk_desc":    export_parts,
+                            "blueprint":    st.session_state.last_blueprint[:2000]
+                        },
+                        headers=api_headers(), timeout=60.0
+                    )
+                    if r.status_code == 200:
+                        data = r.json()
+                        st.success(
+                            f"✅ Workshop Project #{data['project_id']} created! "
+                            f"({data.get('parts_count', 0)} parts identified, "
+                            f"{data.get('tasks_count', 0)} tasks generated, "
+                            f"est. {data.get('est_hours', '?')}hrs)"
+                        )
+                    else:
+                        st.error(f"Workshop error: {r.status_code}")
+                except Exception as e:
+                    st.error(f"Workshop offline: {e}")
+
 
 # ════════════════════════════════════════════════════════════
 #   TAB: HISTORY
@@ -817,6 +849,328 @@ def tab_analytics():
             st.error("Analytics service unavailable")
     except Exception as e:
         st.info(f"Analytics offline: {e}")
+
+
+# ════════════════════════════════════════════════════════════
+#   TAB: WORKSHOP (The Shop Floor)
+# ════════════════════════════════════════════════════════════
+PHASE_ICONS = {"planning": "📐", "fabrication": "🔥", "assembly": "🔩",
+               "electrical": "⚡", "testing": "🧪", "complete": "🏆"}
+PART_STATUS_COLORS = {"needed": "#ff4444", "sourced": "#ffaa00",
+                      "installed": "#00cc66", "missing": "#666"}
+
+def tab_workshop():
+    sec_head("04", "THE SHOP FLOOR")
+
+    # Sub-navigation
+    if "ws_view" not in st.session_state:
+        st.session_state.ws_view = "list"
+    if "ws_project_id" not in st.session_state:
+        st.session_state.ws_project_id = None
+
+    # ── PROJECT LIST VIEW ──
+    if st.session_state.ws_view == "list":
+        try:
+            resp = httpx.get(
+                f"{WORKSHOP_SERVICE_URL}/projects",
+                headers=api_headers(), timeout=10.0
+            )
+            if resp.status_code == 200:
+                projects = resp.json()
+
+                # Workshop stats header
+                try:
+                    sr = httpx.get(f"{WORKSHOP_SERVICE_URL}/workshop/stats",
+                                   headers=api_headers(), timeout=5.0)
+                    if sr.status_code == 200:
+                        ws = sr.json()
+                        c1, c2, c3, c4 = st.columns(4)
+                        with c1:
+                            st.markdown(metric_card(ws.get("active_projects", 0), "ACTIVE PROJECTS"), unsafe_allow_html=True)
+                        with c2:
+                            st.markdown(metric_card(ws.get("completed", 0), "COMPLETED"), unsafe_allow_html=True)
+                        with c3:
+                            st.markdown(metric_card(f"{ws.get('tasks_done', 0)}/{ws.get('tasks_total', 0)}", "TASKS DONE"), unsafe_allow_html=True)
+                        with c4:
+                            st.markdown(metric_card(f"${ws.get('total_est_cost', 0):,.0f}", "EST. TOTAL COST"), unsafe_allow_html=True)
+                        st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+                except Exception:
+                    pass
+
+                if not projects:
+                    st.markdown("""
+                    <div style="border:1px solid #1a0a00;border-left:3px solid #442200;padding:20px 28px;
+                        font-family:Share Tech Mono,monospace;font-size:10px;color:#442200;letter-spacing:1px;">
+                        NO ACTIVE PROJECTS — Forge a blueprint and click "Send to Workshop" to start tracking a build.
+                    </div>""", unsafe_allow_html=True)
+                else:
+                    for p in projects:
+                        phase = p["current_phase"]
+                        icon  = PHASE_ICONS.get(phase, "⚙")
+                        pct   = p["progress"]["percent"]
+
+                        # Progress bar color
+                        bar_color = "#ff6600" if pct < 100 else "#00cc66"
+                        diff_stars = "★" * p["difficulty"] + "☆" * (10 - p["difficulty"])
+
+                        st.markdown(f"""
+                        <div style="background:#0d0d0d;border:1px solid #1a1a1a;border-left:3px solid {'#00cc66' if phase == 'complete' else '#ff6600'};
+                            padding:18px 24px;margin-bottom:6px;position:relative;overflow:hidden;">
+                            <div style="position:absolute;bottom:0;left:0;width:{pct}%;height:2px;background:{bar_color};transition:width .3s;"></div>
+                            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                                <div>
+                                    <span style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:#ff6600;letter-spacing:2px;">
+                                        {icon} {esc(p['title'])}
+                                    </span><br>
+                                    <span style="font-family:'Share Tech Mono',monospace;font-size:9px;color:#555;">
+                                        {esc(p['project_type']).upper()} &nbsp;·&nbsp;
+                                        PHASE: {esc(phase).upper()} &nbsp;·&nbsp;
+                                        {pct}% COMPLETE &nbsp;·&nbsp;
+                                        {p['progress']['done_tasks']}/{p['progress']['total_tasks']} tasks
+                                    </span><br>
+                                    <span style="font-family:'Share Tech Mono',monospace;font-size:8px;color:#442200;">
+                                        DIFFICULTY: <span style="color:#ff6600;">{diff_stars}</span> &nbsp;·&nbsp;
+                                        EST: {p.get('est_hours', 0):.0f}hrs &nbsp;·&nbsp;
+                                        ${p.get('est_cost', 0):,.0f} &nbsp;·&nbsp;
+                                        PARTS: {p['progress']['installed_parts']}/{p['progress']['total_parts']} installed
+                                    </span>
+                                </div>
+                                <div style="text-align:right;font-family:'Share Tech Mono',monospace;font-size:8px;color:#333;">
+                                    #{p['id']}<br>{esc(p.get('created_at', '')[:10])}
+                                </div>
+                            </div>
+                        </div>""", unsafe_allow_html=True)
+
+                    # Project selector
+                    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+                    project_options = {f"#{p['id']} — {p['title']}": p["id"] for p in projects}
+                    selected = st.selectbox("SELECT PROJECT TO OPEN", list(project_options.keys()))
+                    if st.button("🔍  OPEN PROJECT"):
+                        st.session_state.ws_view = "detail"
+                        st.session_state.ws_project_id = project_options[selected]
+                        st.rerun()
+            else:
+                st.error(f"Workshop unavailable: {resp.status_code}")
+        except Exception as e:
+            st.markdown(f"""
+            <div style="border:1px solid #1a0a00;border-left:3px solid #442200;padding:20px 28px;
+                font-family:Share Tech Mono,monospace;font-size:10px;color:#442200;">
+                WORKSHOP OFFLINE — Service starting up.<br>
+                <span style='color:#ff6600;'>Send a blueprint to the workshop to begin.</span>
+            </div>""", unsafe_allow_html=True)
+        return
+
+    # ── PROJECT DETAIL VIEW ──
+    if st.session_state.ws_view == "detail" and st.session_state.ws_project_id:
+        if st.button("← BACK TO ALL PROJECTS"):
+            st.session_state.ws_view = "list"
+            st.session_state.ws_project_id = None
+            st.rerun()
+
+        try:
+            resp = httpx.get(
+                f"{WORKSHOP_SERVICE_URL}/projects/{st.session_state.ws_project_id}",
+                headers=api_headers(), timeout=10.0
+            )
+            if resp.status_code != 200:
+                st.error(f"Could not load project: {resp.status_code}")
+                return
+
+            proj = resp.json()
+        except Exception as e:
+            st.error(f"Workshop offline: {e}")
+            return
+
+        # ── Project Header ──
+        pct = proj["progress_percent"]
+        st.markdown(f"""
+        <div style="background:linear-gradient(135deg,#0f0900,#0d0d0d);border:1px solid #2a1500;
+            border-top:3px solid #ff6600;padding:24px 28px;margin-bottom:20px;position:relative;overflow:hidden;">
+            <div style="position:absolute;bottom:0;left:0;width:{pct}%;height:3px;
+                background:linear-gradient(90deg,#ff6600,#ffaa00);transition:width .3s;"></div>
+            <div style="font-family:'Bebas Neue',sans-serif;font-size:36px;color:#ff6600;letter-spacing:4px;line-height:1;">
+                {esc(proj['title'])}
+            </div>
+            <div style="font-family:'Share Tech Mono',monospace;font-size:9px;color:#555;margin-top:6px;letter-spacing:2px;">
+                {esc(proj['project_type']).upper()} &nbsp;·&nbsp;
+                BUILD #{proj.get('build_id') or '—'} &nbsp;·&nbsp;
+                PROJECT #{proj['id']} &nbsp;·&nbsp;
+                <span style='color:#ff6600;font-size:11px;'>{pct}% COMPLETE</span>
+            </div>
+            <div style="font-family:'Share Tech Mono',monospace;font-size:8px;color:#442200;margin-top:4px;">
+                DIFFICULTY: {'★' * proj['difficulty']}{'☆' * (10 - proj['difficulty'])} &nbsp;·&nbsp;
+                EST: {proj.get('est_hours', 0):.0f} hours &nbsp;·&nbsp;
+                ${proj.get('est_cost', 0):,.0f}
+            </div>
+        </div>""", unsafe_allow_html=True)
+
+        # ── Phase Pipeline ──
+        st.markdown("""
+        <div style="font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:3px;color:#442200;margin-bottom:12px;">
+            ── BUILD PIPELINE ──
+        </div>""", unsafe_allow_html=True)
+
+        phase_cols = st.columns(len(proj["phases"]))
+        for i, phase in enumerate(proj["phases"]):
+            with phase_cols[i]:
+                is_current = phase["is_current"]
+                is_done    = (phase["done"] == phase["total"] and phase["total"] > 0) or \
+                             (proj["phases"].index(phase) < [p["is_current"] for p in proj["phases"]].index(True) if True in [p["is_current"] for p in proj["phases"]] else 99)
+
+                border_color = "#ff6600" if is_current else "#00cc66" if is_done else "#1a1a1a"
+                bg = "rgba(255,100,0,.06)" if is_current else "rgba(0,200,100,.04)" if is_done else "#0d0d0d"
+
+                st.markdown(f"""
+                <div style="background:{bg};border:1px solid {border_color};
+                    {'border-top:3px solid ' + border_color + ';' if is_current else ''}
+                    padding:12px 10px;text-align:center;min-height:90px;">
+                    <div style="font-size:18px;">{phase['icon']}</div>
+                    <div style="font-family:'Share Tech Mono',monospace;font-size:7px;letter-spacing:1px;
+                        color:{border_color};margin-top:4px;">
+                        {esc(phase['name'])}
+                    </div>
+                    <div style="font-family:'Bebas Neue',sans-serif;font-size:16px;
+                        color:{'#ff6600' if is_current else '#00cc66' if is_done else '#333'};">
+                        {phase['done']}/{phase['total']}
+                    </div>
+                </div>""", unsafe_allow_html=True)
+
+        st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+
+        # ── Advance Phase Button ──
+        current_phase = proj["current_phase"]
+        if current_phase != "complete":
+            current_phase_info = next((p for p in proj["phases"] if p["key"] == current_phase), None)
+            if current_phase_info:
+                gate_text = next((p["gate"] for p in [{"key": ph["key"], "gate": ph.get("gate")} for ph in proj["phases"]] if p["key"] == current_phase), "")
+
+                safety_confirmed = st.checkbox(
+                    f"⛑ SAFETY GATE — {gate_text or 'Confirm ready to advance'}",
+                    key=f"safety_{proj['id']}"
+                )
+                if st.button(f"⏭  ADVANCE TO NEXT PHASE"):
+                    if not safety_confirmed:
+                        st.warning("⚠ You must confirm the safety gate before advancing.")
+                    else:
+                        try:
+                            r = httpx.patch(
+                                f"{WORKSHOP_SERVICE_URL}/projects/{proj['id']}/phase",
+                                json={"safety_confirmed": True},
+                                headers=api_headers(), timeout=10.0
+                            )
+                            if r.status_code == 200:
+                                st.success(f"✅ Advanced to: {r.json()['current_phase'].upper()}")
+                                st.rerun()
+                            else:
+                                st.error(f"Cannot advance: {r.json().get('detail', r.status_code)}")
+                        except Exception as e:
+                            st.error(f"Error: {e}")
+
+        st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+
+        # ── Two-column: Tasks + Parts ──
+        col_left, col_right = st.columns([1.3, 1])
+
+        with col_left:
+            sec_head("", "TASKS — CURRENT PHASE")
+
+            current_tasks = []
+            for phase in proj["phases"]:
+                if phase["key"] == current_phase:
+                    current_tasks = phase["tasks"]
+                    break
+
+            if not current_tasks:
+                st.markdown("<div style='font-family:Share Tech Mono,monospace;font-size:10px;color:#442200;'>No tasks for this phase.</div>", unsafe_allow_html=True)
+            else:
+                for task in current_tasks:
+                    is_done = task["is_complete"]
+                    is_safety = task.get("is_safety", False)
+
+                    icon = "✅" if is_done else ("⛑" if is_safety else "⬜")
+                    color = "#00cc66" if is_done else ("#ffaa00" if is_safety else "#888")
+                    strike = "text-decoration:line-through;opacity:.5;" if is_done else ""
+
+                    task_key = f"task_{proj['id']}_{task['id']}"
+                    checked = st.checkbox(
+                        f"{icon} {task['title']}",
+                        value=is_done,
+                        key=task_key
+                    )
+
+                    # If user toggled it
+                    if checked != is_done:
+                        try:
+                            httpx.patch(
+                                f"{WORKSHOP_SERVICE_URL}/projects/{proj['id']}/tasks/{task['id']}",
+                                json={"is_complete": checked},
+                                headers=api_headers(), timeout=5.0
+                            )
+                            st.rerun()
+                        except Exception:
+                            pass
+
+        with col_right:
+            sec_head("", "PARTS CHECKLIST")
+
+            parts = proj.get("parts", [])
+            ps = proj.get("parts_summary", {})
+
+            if parts:
+                st.markdown(f"""
+                <div style="font-family:'Share Tech Mono',monospace;font-size:9px;color:#555;margin-bottom:10px;">
+                    {ps.get('installed', 0)} installed · {ps.get('sourced', 0)} sourced ·
+                    {ps.get('needed', 0)} needed · ${ps.get('total_value', 0):,.0f} est. value
+                </div>""", unsafe_allow_html=True)
+
+                for part in parts[:20]:
+                    status_color = PART_STATUS_COLORS.get(part["status"], "#666")
+                    source_tag = f"[{part['source']}]" if part["source"] != "salvage" else ""
+
+                    st.markdown(f"""
+                    <div style="background:#0c0c0c;border:1px solid #1a1a1a;border-left:3px solid {status_color};
+                        padding:8px 12px;margin-bottom:3px;font-family:'Share Tech Mono',monospace;font-size:9px;">
+                        <span style="color:#ff6600;">{esc(part['name'])}</span>
+                        <span style="color:#333;"> · {esc(part['category'])} {source_tag}</span>
+                        <span style="float:right;color:{status_color};font-size:8px;letter-spacing:1px;">
+                            {esc(part['status']).upper()}
+                        </span>
+                    </div>""", unsafe_allow_html=True)
+
+                if len(parts) > 20:
+                    st.markdown(f"<div style='font-family:Share Tech Mono;font-size:8px;color:#442200;'>...and {len(parts) - 20} more parts</div>", unsafe_allow_html=True)
+            else:
+                st.markdown("<div style='font-family:Share Tech Mono,monospace;font-size:10px;color:#442200;'>No parts tracked yet.</div>", unsafe_allow_html=True)
+
+        # ── Build Notes ──
+        st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+        sec_head("", "BUILD LOG")
+
+        notes = proj.get("notes", [])
+        if notes:
+            for note in notes[:10]:
+                note_icon = {"safety": "⚠️", "tools": "🔧", "phase_change": "⏭", "log": "📝"}.get(note["note_type"], "📝")
+                st.markdown(f"""
+                <div class="admin-row">
+                    <span style="color:#ff6600;">{note_icon}</span>&nbsp;
+                    <span style="color:#888;">{esc(note['content'][:200])}</span>
+                    <span style="float:right;color:#333;font-size:8px;">{esc(note.get('created_at', '')[:16])}</span>
+                </div>""", unsafe_allow_html=True)
+
+        # Add note form
+        new_note = st.text_input("ADD BUILD NOTE", placeholder="Log progress, issues, observations...",
+                                 key=f"note_input_{proj['id']}")
+        if st.button("📝  LOG NOTE", key=f"note_btn_{proj['id']}"):
+            if new_note.strip():
+                try:
+                    httpx.post(
+                        f"{WORKSHOP_SERVICE_URL}/projects/{proj['id']}/notes",
+                        json={"phase": current_phase, "content": new_note, "note_type": "log"},
+                        headers=api_headers(), timeout=5.0
+                    )
+                    st.rerun()
+                except Exception:
+                    st.error("Could not save note")
 
 
 # ════════════════════════════════════════════════════════════
@@ -937,7 +1291,7 @@ def main_dashboard():
     render_header()
 
     # Build tab list based on permissions
-    tab_labels = ["⚡  NEW BUILD", "📜  HISTORY", "📊  ANALYTICS"]
+    tab_labels = ["⚡  NEW BUILD", "📜  HISTORY", "🔩  WORKSHOP", "📊  ANALYTICS"]
     if st.session_state.is_admin:
         tab_labels.append("🔐  CONTROL ROOM")
 
@@ -948,9 +1302,11 @@ def main_dashboard():
     with tabs[1]:
         tab_history()
     with tabs[2]:
+        tab_workshop()
+    with tabs[3]:
         tab_analytics()
-    if st.session_state.is_admin and len(tabs) > 3:
-        with tabs[3]:
+    if st.session_state.is_admin and len(tabs) > 4:
+        with tabs[4]:
             tab_admin()
 
 
