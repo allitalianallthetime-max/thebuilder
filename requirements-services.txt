@@ -1,5 +1,9 @@
+# requirements-services.txt
+# Used by: ai_service, auth_service, billing_service,
+#          analytics_service, admin_service, export_service
+
 fastapi
-uvicorn
+uvicorn[standard]
 httpx
 stripe
 PyJWT
@@ -7,3 +11,7 @@ psycopg2-binary
 pydantic
 pydantic-settings
 python-dotenv
+anthropic
+google-generativeai
+openai
+reportlab
