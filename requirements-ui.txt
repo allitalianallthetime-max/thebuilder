@@ -1,9 +1,12 @@
 # requirements-ui.txt
 # Used by: app.py (Streamlit UI)
-# IMPORTANT: Pinned to 1.32.0 — later versions break unsafe_allow_html rendering
-# of large inline HTML blocks. Do NOT upgrade without testing the landing page.
+#
+# Render defaults to Python 3.14 — protobuf 5.x is REQUIRED (4.x crashes on 3.14).
+# streamlit >= 1.44 ships with protobuf 5.x support and safe HTML rendering.
+# The hero landing page uses components.html() as a belt-and-suspenders fallback.
 
-streamlit==1.32.0
+streamlit>=1.44.0,<2.0
 httpx
 python-dotenv
 pandas
+protobuf>=5.29.0
