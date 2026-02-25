@@ -29,8 +29,17 @@ app = FastAPI()
 STRIPE_SECRET_KEY  = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_WEBHOOK_SEC = os.getenv("STRIPE_WEBHOOK_SEC")
 INTERNAL_API_KEY   = os.getenv("INTERNAL_API_KEY")
-AUTH_SERVICE_URL   = os.getenv("AUTH_SERVICE_URL")
 APP_URL            = os.getenv("APP_URL", "https://builder-ui.onrender.com")
+
+def normalize_url(raw: str, default: str) -> str:
+    if not raw:
+        return default
+    raw = raw.strip()
+    if raw.startswith("http://") or raw.startswith("https://"):
+        return raw
+    return f"http://{raw}:10000"
+
+AUTH_SERVICE_URL   = normalize_url(os.getenv("AUTH_SERVICE_URL", ""), "http://builder-auth:10000")
 
 stripe.api_key = STRIPE_SECRET_KEY
 
