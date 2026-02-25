@@ -1,4 +1,13 @@
+# requirements-ui.txt
+# Used by: app.py (Streamlit UI)
+
 streamlit
-requests
-pandas
+httpx
 python-dotenv
+pandas
+
+
+
+
+
+
