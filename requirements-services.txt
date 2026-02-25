@@ -1,6 +1,9 @@
 # requirements-services.txt
 # Used by: ai_service, auth_service, billing_service,
-#          analytics_service, admin_service, export_service
+#          analytics_service, admin_service, export_service,
+#          workshop_service
+#
+# protobuf >= 5.29 required for Python 3.14 (Render default)
 
 fastapi
 uvicorn[standard]
@@ -15,3 +18,4 @@ anthropic
 google-generativeai
 openai
 reportlab
+protobuf>=5.29.0
