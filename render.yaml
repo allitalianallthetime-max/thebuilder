@@ -41,6 +41,8 @@ services:
     buildCommand: pip install -r requirements-services.txt
     startCommand: uvicorn ai_service:app --host 0.0.0.0 --port $PORT
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.7"
       - key: INTERNAL_API_KEY
         fromService:
           type: web
@@ -65,6 +67,8 @@ services:
     buildCommand: pip install -r requirements-services.txt
     startCommand: uvicorn auth_service:app --host 0.0.0.0 --port $PORT
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.7"
       - key: INTERNAL_API_KEY
         fromService:
           type: web
@@ -85,6 +89,8 @@ services:
     buildCommand: pip install -r requirements-services.txt
     startCommand: uvicorn billing_service:app --host 0.0.0.0 --port $PORT
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.7"
       - key: INTERNAL_API_KEY
         fromService:
           type: web
@@ -107,6 +113,8 @@ services:
     buildCommand: pip install -r requirements-services.txt
     startCommand: uvicorn analytics_service:app --host 0.0.0.0 --port $PORT
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.7"
       - key: INTERNAL_API_KEY
         fromService:
           type: web
@@ -125,6 +133,8 @@ services:
     buildCommand: pip install -r requirements-services.txt
     startCommand: uvicorn admin_service:app --host 0.0.0.0 --port $PORT
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.7"
       - key: MASTER_KEY
         fromService:
           type: web
@@ -154,6 +164,8 @@ services:
     buildCommand: pip install -r requirements-services.txt
     startCommand: uvicorn export_service:app --host 0.0.0.0 --port $PORT
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.7"
       - key: INTERNAL_API_KEY
         fromService:
           type: web
@@ -168,6 +180,8 @@ services:
     buildCommand: pip install -r requirements-services.txt
     startCommand: uvicorn workshop_service:app --host 0.0.0.0 --port $PORT
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.7"
       - key: INTERNAL_API_KEY
         fromService:
           type: web
