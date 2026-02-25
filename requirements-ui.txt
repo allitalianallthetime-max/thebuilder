@@ -1,7 +1,9 @@
 # requirements-ui.txt
 # Used by: app.py (Streamlit UI)
+# IMPORTANT: Pinned to 1.32.0 — later versions break unsafe_allow_html rendering
+# of large inline HTML blocks. Do NOT upgrade without testing the landing page.
 
-streamlit
+streamlit==1.32.0
 httpx
 python-dotenv
 pandas
