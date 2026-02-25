@@ -15,23 +15,39 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ── HTML Renderer ─────────────────────────────────────────────────────────────
-# Streamlit versions handle unsafe_allow_html differently.
-# This helper tries st.markdown first, falls back to components.html (iframe).
-def st.html(content: str, height: int = 0):
-    """Render raw HTML. Uses st.markdown with unsafe_allow_html.
-    For large standalone blocks, set height > 0 to use components.html (iframe) instead."""
+# ── Safe HTML Renderer ────────────────────────────────────────────────────────
+# Streamlit versions handle HTML injection differently:
+#   - st.markdown(unsafe_allow_html=True): Works for <style>, but newer versions
+#     sanitize/strip <div>, <span>, and other block elements.
+#   - safe_html(): Added in 1.33+. Renders in iframe (1.33-1.41) or DOM (1.42+).
+#   - components.html(): Always works — full iframe, needs explicit height.
+#
+# This helper picks the best method available.
+
+_IFRAME_CSS = '<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">'
+_IFRAME_BODY_STYLE = "margin:0;padding:0;background:transparent;overflow:hidden;font-family:'Rajdhani',sans-serif;color:#e8d5b0;"
+
+def safe_html(content: str, height: int = 0):
+    """Render HTML block safely across all Streamlit versions.
+    
+    height=0  → auto (uses st.html if available, else st.markdown fallback)
+    height>0  → explicit iframe via components.html (bulletproof, any version)
+    """
     if height > 0:
-        # Iframe mode — fully isolated, works in any Streamlit version.
-        # Inject dark background to match theme.
-        wrapped = f"""
-        <html><head>
-        <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
-        <style>body {{ margin:0; padding:0; background:#060606; overflow-x:hidden; }}</style>
-        </head><body>{content}</body></html>"""
+        wrapped = f"<html><head>{_IFRAME_CSS}<style>body{{{_IFRAME_BODY_STYLE}}}</style></head><body>{content}</body></html>"
         components.html(wrapped, height=height, scrolling=False)
-    else:
-        st.html(content)
+        return
+    
+    # Try st.html first (Streamlit 1.33+), fall back to st.markdown
+    if hasattr(st, 'html') and callable(getattr(st, 'html', None)):
+        try:
+            st.html(content)
+            return
+        except Exception:
+            pass
+    
+    # Fallback — works for most HTML, may break on complex blocks in newer versions
+    st.markdown(content, unsafe_allow_html=True)
 
 # ── URL Normalizer ────────────────────────────────────────────────────────────
 # Render's RENDER_INTERNAL_HOSTNAME gives bare hostnames (e.g. "builder-auth").
@@ -67,7 +83,7 @@ st.set_page_config(
 # ════════════════════════════════════════════════════════════
 #   GLOBAL STYLES
 # ════════════════════════════════════════════════════════════
-st.html("""
+st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&family=Orbitron:wght@400;700;900&display=swap');
 
@@ -227,7 +243,7 @@ html, body, .stApp { background-color: var(--dark) !important; color: var(--text
 }
 .admin-row:hover { border-left-color:var(--orange); }
 </style>
-""")
+""", unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════════════
 #   SESSION STATE
@@ -261,7 +277,7 @@ def api_headers():
     return {"x-internal-key": INTERNAL_API_KEY}
 
 def sec_head(num: str, title: str):
-    st.html(f"""
+    safe_html(f"""
     <div class="sec-head">
         <div class="sec-num">{esc(num)}</div>
         <div class="sec-title">{esc(title)}</div>
@@ -290,8 +306,8 @@ def check_service_health(url: str) -> tuple:
 #   LANDING PAGE
 # ════════════════════════════════════════════════════════════
 def login():
-    render_html("""
-    <div style="min-height:100vh;
+    # Hero section — uses components.html (iframe) for bulletproof rendering
+    _hero = """    <div style="min-height:100vh;
         background:
             repeating-linear-gradient(90deg,rgba(255,255,255,.010) 0,rgba(255,255,255,.010) 1px,transparent 1px,transparent 64px),
             repeating-linear-gradient(180deg,rgba(255,255,255,.010) 0,rgba(255,255,255,.010) 1px,transparent 1px,transparent 64px),
@@ -434,13 +450,20 @@ def login():
 
     </div>
     </div>
-    """)
+"""
+    _full = "<html><head>" + _IFRAME_CSS + """<style>
+    body { margin:0; padding:0; background:#060606; overflow-x:hidden; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes flicker { 0%,100%{opacity:1;} 92%{opacity:1;} 93%{opacity:.8;} 94%{opacity:1;} }
+    @keyframes flow { 0%{background-position:200% 0;} 100%{background-position:-200% 0;} }
+    </style></head><body>""" + _hero + "</body></html>"
+    components.html(_full, height=1000, scrolling=False)
 
     # ── LOGIN BOX ──
-    st.html("<div style='height:4px;background:#060606'></div>")
+    safe_html("<div style='height:4px;background:#060606'></div>")
     col1, col2, col3 = st.columns([1, 1.0, 1])
     with col2:
-        st.html("""
+        safe_html("""
         <div style="border:1px solid #2a1500;border-top:3px solid #ff6600;
             background:linear-gradient(160deg,#0f0900,#090909);padding:28px 28px 8px;position:relative;
             box-shadow:0 20px 60px rgba(0,0,0,.95);">
@@ -483,17 +506,17 @@ def login():
                 except Exception as e:
                     st.error(f"⛔  AUTH SERVICE OFFLINE: {e}")
 
-        st.html("""
+        safe_html("""
         <div style="text-align:center;padding:12px 0 4px;font-family:'Share Tech Mono',monospace;font-size:8px;color:#2a1500;letter-spacing:2px;">
             NO LICENSE? CONTACT AoC3P0 SYSTEMS TO ACQUIRE ACCESS
         </div>""")
 
     # Purchase link
     if STRIPE_PAYMENT_URL and STRIPE_PAYMENT_URL != "#":
-        st.html("<div style='height:8px'></div>")
+        safe_html("<div style='height:8px'></div>")
         col1, col2, col3 = st.columns([1, 1.0, 1])
         with col2:
-            st.html(f"""
+            safe_html(f"""
             <a href="{STRIPE_PAYMENT_URL}" target="_blank" style="display:block;background:linear-gradient(135deg,#8B1A00,#cc4400,#ff6600);
                 color:#000;font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:4px;
                 text-align:center;padding:14px;text-decoration:none;border:1px solid #ff8800;
@@ -511,7 +534,7 @@ def render_sidebar():
         tier  = esc(st.session_state.user_tier.upper())
         admin = st.session_state.is_admin
 
-        st.html(f"""
+        safe_html(f"""
         <div class="sb-head">
             <div class="sb-title">ANTHONY'S<br>GARAGE</div>
             <div class="sb-sub">AoC3P0 Builder · {tier}</div>
@@ -519,7 +542,7 @@ def render_sidebar():
         </div>""")
 
         # Service status — cached (30s) so sidebar doesn't block on every rerun
-        st.html("<div class='sb-section'>ACTIVE SERVICES</div>")
+        safe_html("<div class='sb-section'>ACTIVE SERVICES</div>")
         services = [
             ("⚙", "FORGE ENGINE",   AI_SERVICE_URL),
             ("🛡", "AUTH GUARD",     AUTH_SERVICE_URL),
@@ -533,22 +556,22 @@ def render_sidebar():
                 status, tag = check_service_health(url)
             else:
                 status, tag = "srv-on", "ONLINE"
-            st.html(f"""
+            safe_html(f"""
             <div class="srv-row">
                 <span>{icon} {label}</span>
                 <span class="{status}">{tag}</span>
             </div>""")
 
-        st.html("<div style='height:12px'></div>")
+        safe_html("<div style='height:12px'></div>")
 
         if admin:
-            st.html("<div class='sb-section'>ADMIN</div>")
-            st.html(f"""
+            safe_html("<div class='sb-section'>ADMIN</div>")
+            safe_html(f"""
             <div style="padding:10px 18px;font-family:'Share Tech Mono',monospace;font-size:9px;color:#444;">
                 👤 {name} &nbsp;·&nbsp; <span style='color:#ff6600;'>MASTER ACCESS</span>
             </div>""")
 
-        st.html("<div style='height:8px'></div>")
+        safe_html("<div style='height:8px'></div>")
         if st.button("⏻  LOCK GARAGE"):
             # Reset ALL session state to correct default types
             for key, val in _DEFAULTS.items():
@@ -561,7 +584,7 @@ def render_sidebar():
 # ════════════════════════════════════════════════════════════
 def render_header():
     tier = st.session_state.user_tier.upper()
-    st.html(f"""
+    safe_html(f"""
     <div style="background:linear-gradient(90deg,#0a0500,#060606,#050a00);
         border-bottom:1px solid #151515;padding:18px 40px;
         display:flex;align-items:center;justify-content:space-between;position:relative;overflow:hidden;">
@@ -600,7 +623,7 @@ def tab_new_build():
     # Check for prefill from X-Ray Scanner
     prefill = st.session_state.pop("prefill_workbench", "")
     if prefill:
-        st.html("""
+        safe_html("""
         <div style="font-family:'Share Tech Mono',monospace;font-size:9px;color:#00cc66;
             border:1px solid rgba(0,200,100,.3);border-left:3px solid #00cc66;
             padding:10px 14px;margin-bottom:12px;">
@@ -630,7 +653,7 @@ def tab_new_build():
             "Master Build (Expert Only)"
         ])
 
-    st.html("<div style='height:16px'></div>")
+    safe_html("<div style='height:16px'></div>")
 
     if st.button("🔥  FORGE THE BLUEPRINT"):
         if not junk_input.strip():
@@ -663,7 +686,7 @@ def tab_new_build():
 
     # ── BLUEPRINT OUTPUT ──
     if st.session_state.last_blueprint:
-        st.html(f"""
+        safe_html(f"""
         <div class="output-header">
             ⚙ BLUEPRINT FORGED — ROUND TABLE CONSENSUS REACHED
             &nbsp;·&nbsp; BUILD #{st.session_state.last_build_id or '—'}
@@ -676,8 +699,8 @@ def tab_new_build():
         export_type  = st.session_state.last_project_type or project_type
         export_parts = st.session_state.last_junk_input or junk_input
 
-        st.html("<div style='height:20px'></div>")
-        st.html("""
+        safe_html("<div style='height:20px'></div>")
+        safe_html("""
         <div style="font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:3px;color:#442200;margin-bottom:12px;">
             ── EXPORT OPTIONS ──
         </div>""")
@@ -743,7 +766,7 @@ def tab_new_build():
                 st.rerun()
 
         # ── SEND TO WORKSHOP ──
-        st.html("<div style='height:16px'></div>")
+        safe_html("<div style='height:16px'></div>")
         if st.button("🔩  SEND TO WORKSHOP — Track This Build"):
             with st.spinner("Creating workshop project with AI parts analysis..."):
                 try:
@@ -785,13 +808,13 @@ def tab_history():
             builds = resp.json()
 
             if not builds:
-                st.html("""
+                safe_html("""
                 <div style="border:1px solid #1a0a00;border-left:3px solid #442200;padding:20px 28px;
                     font-family:Share Tech Mono,monospace;font-size:10px;color:#442200;letter-spacing:1px;">
                     NO BUILDS YET — FIRE UP THE FORGE TO START YOUR LOGBOOK.
                 </div>""")
             else:
-                st.html(f"""
+                safe_html(f"""
                 <div style="font-family:'Share Tech Mono',monospace;font-size:9px;color:#442200;
                     letter-spacing:2px;margin-bottom:16px;">
                     {len(builds)} BLUEPRINTS IN THE LOGBOOK
@@ -801,7 +824,7 @@ def tab_history():
                     created = esc(b.get("created", "")[:16].replace("T", " "))
                     parts   = esc(b['parts'][:80])
                     suffix  = '...' if len(b['parts']) > 80 else ''
-                    st.html(f"""
+                    safe_html(f"""
                     <div class="history-row">
                         <div>
                             <span style="font-family:'Bebas Neue',sans-serif;font-size:18px;color:#ff6600;letter-spacing:2px;">
@@ -819,7 +842,7 @@ def tab_history():
         else:
             st.error(f"Could not load history: {resp.status_code}")
     except Exception as e:
-        st.html("""
+        safe_html("""
         <div style="border:1px solid #1a0a00;border-left:3px solid #442200;padding:20px 28px;
             font-family:Share Tech Mono,monospace;font-size:10px;color:#442200;">
             LOGBOOK OFFLINE — DATABASE SYNC IN PROGRESS.<br>
@@ -840,15 +863,15 @@ def tab_analytics():
 
             col1, col2, col3, col4 = st.columns(4)
             with col1:
-                st.html(metric_card(stats.get("total_builds", 0), "TOTAL BUILDS"))
+                safe_html(metric_card(stats.get("total_builds", 0), "TOTAL BUILDS"))
             with col2:
-                st.html(metric_card(stats.get("builds_today", 0), "BUILDS TODAY"))
+                safe_html(metric_card(stats.get("builds_today", 0), "BUILDS TODAY"))
             with col3:
-                st.html(metric_card(stats.get("active_licenses", 0), "ACTIVE LICENSES"))
+                safe_html(metric_card(stats.get("active_licenses", 0), "ACTIVE LICENSES"))
             with col4:
-                st.html(metric_card(stats.get("builds_this_week", 0), "THIS WEEK"))
+                safe_html(metric_card(stats.get("builds_this_week", 0), "THIS WEEK"))
 
-            st.html("<div style='height:24px'></div>")
+            safe_html("<div style='height:24px'></div>")
 
             col1, col2 = st.columns(2)
 
@@ -857,7 +880,7 @@ def tab_analytics():
                 r2 = httpx.get(f"{ANALYTICS_SERVICE_URL}/stats/builds", headers=api_headers(), timeout=10.0)
                 if r2.status_code == 200:
                     for item in r2.json().get("by_type", []):
-                        st.html(f"""
+                        safe_html(f"""
                         <div class="admin-row">
                             <span style="color:#ff6600;">{esc(item['type'])}</span>
                             &nbsp;·&nbsp;
@@ -869,7 +892,7 @@ def tab_analytics():
                 r3 = httpx.get(f"{ANALYTICS_SERVICE_URL}/stats/popular-parts", headers=api_headers(), timeout=10.0)
                 if r3.status_code == 200:
                     for item in r3.json().get("popular_parts", [])[:8]:
-                        st.html(f"""
+                        safe_html(f"""
                         <div class="admin-row">
                             <span style="color:#ff6600;">{esc(item['keyword']).upper()}</span>
                             &nbsp;·&nbsp;
@@ -890,7 +913,7 @@ HAZARD_COLORS = {"none": "#00cc66", "low": "#00cc66", "medium": "#ffaa00",
 def tab_scanner():
     sec_head("02", "X-RAY SCANNER")
 
-    st.html("""
+    safe_html("""
     <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:#555;
         border:1px solid #1a1a1a;border-left:3px solid #ff6600;padding:14px 20px;margin-bottom:20px;">
         📸 Upload a photo of any equipment, machine, or junk pile.<br>
@@ -916,12 +939,12 @@ def tab_scanner():
             placeholder="e.g. 'Found in a hospital basement, looks like a ventilator from the 90s, has a compressor on the side...'",
             height=120
         )
-        st.html("""
+        safe_html("""
         <div style="font-family:'Share Tech Mono',monospace;font-size:8px;color:#333;margin-top:8px;">
             Adding context helps the AI identify obscure equipment more accurately.
         </div>""")
 
-    st.html("<div style='height:12px'></div>")
+    safe_html("<div style='height:12px'></div>")
 
     if st.button("🔬  INITIATE X-RAY SCAN"):
         if not uploaded_file:
@@ -969,7 +992,7 @@ def tab_scanner():
         hazard_color = HAZARD_COLORS.get(hazard_level, "#666")
 
         # ── IDENTIFICATION HEADER ──
-        st.html(f"""
+        safe_html(f"""
         <div style="background:linear-gradient(135deg,#0f0900,#0d0d0d);border:1px solid #2a1500;
             border-top:3px solid #ff6600;padding:28px 32px;margin:20px 0;position:relative;">
             <div style="position:absolute;top:10px;right:14px;font-family:'Share Tech Mono',monospace;
@@ -1002,15 +1025,15 @@ def tab_scanner():
         # ── METRICS ROW ──
         mc1, mc2, mc3, mc4 = st.columns(4)
         with mc1:
-            st.html(metric_card(len(comps), "COMPONENTS FOUND"))
+            safe_html(metric_card(len(comps), "COMPONENTS FOUND"))
         with mc2:
-            st.html(metric_card(f"${salvage.get('total_estimated_value', 0):,.0f}", "SALVAGE VALUE"))
+            safe_html(metric_card(f"${salvage.get('total_estimated_value', 0):,.0f}", "SALVAGE VALUE"))
         with mc3:
-            st.html(metric_card(f"{salvage.get('teardown_hours', 0):.0f}h", "TEARDOWN TIME"))
+            safe_html(metric_card(f"{salvage.get('teardown_hours', 0):.0f}h", "TEARDOWN TIME"))
         with mc4:
-            st.html(metric_card(hazard_level.upper(), "HAZARD LEVEL"))
+            safe_html(metric_card(hazard_level.upper(), "HAZARD LEVEL"))
 
-        st.html("<div style='height:20px'></div>")
+        safe_html("<div style='height:20px'></div>")
 
         # ── SCHEMATICS ──
         if schema:
@@ -1026,7 +1049,7 @@ def tab_scanner():
             for key, label in schema_fields:
                 val = schema.get(key)
                 if val:
-                    st.html(f"""
+                    safe_html(f"""
                     <div style="background:#0c0c0c;border:1px solid #1a1a1a;border-left:3px solid #ff6600;
                         padding:12px 18px;margin-bottom:4px;">
                         <div style="font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:2px;
@@ -1039,7 +1062,7 @@ def tab_scanner():
             # ASCII electrical diagram
             elec = schema.get("electrical_diagram")
             if elec:
-                st.html(f"""
+                safe_html(f"""
                 <div style="background:#0a0a0a;border:1px solid #2a1500;padding:18px 22px;margin:10px 0;">
                     <div style="font-family:'Share Tech Mono',monospace;font-size:8px;color:#ff6600;
                         letter-spacing:2px;margin-bottom:8px;">⚡ ELECTRICAL FLOW DIAGRAM</div>
@@ -1047,7 +1070,7 @@ def tab_scanner():
                         margin:0;white-space:pre-wrap;line-height:1.5;">{esc(elec)}</pre>
                 </div>""")
 
-        st.html("<div style='height:16px'></div>")
+        safe_html("<div style='height:16px'></div>")
 
         # ── SPECS + HAZARDS side by side ──
         col_specs, col_hazards = st.columns(2)
@@ -1057,14 +1080,14 @@ def tab_scanner():
             if specs:
                 for key, val in specs.items():
                     if val and key != "other_specs":
-                        st.html(f"""
+                        safe_html(f"""
                         <div class="admin-row">
                             <span style="color:#ff6600;">{esc(key.replace('_', ' ').upper())}</span>
                             &nbsp;·&nbsp; <span style="color:#c8b890;">{esc(val)}</span>
                         </div>""")
                 for extra in specs.get("other_specs", []):
                     if extra:
-                        st.html(f"""
+                        safe_html(f"""
                         <div class="admin-row">
                             <span style="color:#888;">{esc(extra)}</span>
                         </div>""")
@@ -1073,7 +1096,7 @@ def tab_scanner():
             sec_head("", "HAZARD ASSESSMENT")
             if hazards:
                 for w in hazards.get("warnings", []):
-                    st.html(f"""
+                    safe_html(f"""
                     <div style="background:rgba(255,68,68,.08);border:1px solid rgba(255,68,68,.3);
                         border-left:3px solid {hazard_color};padding:10px 14px;margin-bottom:4px;
                         font-family:'Share Tech Mono',monospace;font-size:10px;color:#ff8888;">
@@ -1083,7 +1106,7 @@ def tab_scanner():
                 ppe = hazards.get("required_ppe", [])
                 if ppe:
                     ppe_text = " · ".join(esc(p) for p in ppe)
-                    st.html(f"""
+                    safe_html(f"""
                     <div style="font-family:'Share Tech Mono',monospace;font-size:9px;color:#ffaa00;
                         margin-top:8px;letter-spacing:1px;">
                         🛡 REQUIRED PPE: {ppe_text}
@@ -1091,11 +1114,11 @@ def tab_scanner():
 
                 lockout = hazards.get("lockout_tagout")
                 if lockout:
-                    st.html(f"""
+                    safe_html(f"""
                     <div style="font-family:'Share Tech Mono',monospace;font-size:9px;color:#ff4444;
                         margin-top:6px;">🔒 LOCKOUT/TAGOUT: {esc(lockout)}</div>""")
 
-        st.html("<div style='height:16px'></div>")
+        safe_html("<div style='height:16px'></div>")
 
         # ── COMPONENT TEARDOWN TABLE ──
         sec_head("", f"COMPONENT TEARDOWN — {len(comps)} PARTS")
@@ -1108,7 +1131,7 @@ def tab_scanner():
                 cats.setdefault(cat, []).append(c)
 
             for cat_name, cat_parts in sorted(cats.items()):
-                st.html(f"""
+                safe_html(f"""
                 <div style="font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:3px;
                     color:#442200;margin:12px 0 6px;border-bottom:1px solid #1a1a1a;padding-bottom:4px;">
                     ── {esc(cat_name).upper()} ({len(cat_parts)}) ──
@@ -1122,7 +1145,7 @@ def tab_scanner():
                     val = comp.get("salvage_value", 0)
                     qty = comp.get("quantity", 1)
 
-                    st.html(f"""
+                    safe_html(f"""
                     <div style="background:#0c0c0c;border:1px solid #1a1a1a;border-left:3px solid {reuse_color};
                         padding:10px 16px;margin-bottom:3px;display:flex;justify-content:space-between;align-items:center;">
                         <div>
@@ -1149,10 +1172,10 @@ def tab_scanner():
 
         # ── BUILD POTENTIAL ──
         if builds:
-            st.html("<div style='height:16px'></div>")
+            safe_html("<div style='height:16px'></div>")
             sec_head("", "BUILD POTENTIAL — What could this become?")
             for i, idea in enumerate(builds):
-                st.html(f"""
+                safe_html(f"""
                 <div class="admin-row">
                     <span style="color:#ff6600;font-family:'Bebas Neue',sans-serif;font-size:16px;
                         letter-spacing:2px;">IDEA {i+1}</span>
@@ -1161,8 +1184,8 @@ def tab_scanner():
                 </div>""")
 
         # ── ACTION BUTTONS ──
-        st.html("<div style='height:20px'></div>")
-        st.html("""
+        safe_html("<div style='height:20px'></div>")
+        safe_html("""
         <div style="font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:3px;
             color:#442200;margin-bottom:12px;">── ACTIONS ──</div>""")
 
@@ -1217,7 +1240,7 @@ def tab_scanner():
                 st.rerun()
 
     # ── SCAN HISTORY ──
-    st.html("<div style='height:24px'></div>")
+    safe_html("<div style='height:24px'></div>")
     sec_head("", "SCAN HISTORY")
 
     try:
@@ -1228,7 +1251,7 @@ def tab_scanner():
             if scans:
                 for s in scans[:10]:
                     hz_color = HAZARD_COLORS.get(s.get("hazard_level", "unknown"), "#666")
-                    st.html(f"""
+                    safe_html(f"""
                     <div class="history-row">
                         <div>
                             <span style="font-family:'Bebas Neue',sans-serif;font-size:16px;color:#ff6600;letter-spacing:2px;">
@@ -1246,7 +1269,7 @@ def tab_scanner():
                         </div>
                     </div>""")
             else:
-                st.html("""
+                safe_html("""
                 <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:#442200;">
                     No scans yet. Upload a photo to start.
                 </div>""")
@@ -1289,19 +1312,19 @@ def tab_workshop():
                         ws = sr.json()
                         c1, c2, c3, c4 = st.columns(4)
                         with c1:
-                            st.html(metric_card(ws.get("active_projects", 0), "ACTIVE PROJECTS"))
+                            safe_html(metric_card(ws.get("active_projects", 0), "ACTIVE PROJECTS"))
                         with c2:
-                            st.html(metric_card(ws.get("completed", 0), "COMPLETED"))
+                            safe_html(metric_card(ws.get("completed", 0), "COMPLETED"))
                         with c3:
-                            st.html(metric_card(f"{ws.get('tasks_done', 0)}/{ws.get('tasks_total', 0)}", "TASKS DONE"))
+                            safe_html(metric_card(f"{ws.get('tasks_done', 0)}/{ws.get('tasks_total', 0)}", "TASKS DONE"))
                         with c4:
-                            st.html(metric_card(f"${ws.get('total_est_cost', 0):,.0f}", "EST. TOTAL COST"))
-                        st.html("<div style='height:20px'></div>")
+                            safe_html(metric_card(f"${ws.get('total_est_cost', 0):,.0f}", "EST. TOTAL COST"))
+                        safe_html("<div style='height:20px'></div>")
                 except Exception:
                     pass
 
                 if not projects:
-                    st.html("""
+                    safe_html("""
                     <div style="border:1px solid #1a0a00;border-left:3px solid #442200;padding:20px 28px;
                         font-family:Share Tech Mono,monospace;font-size:10px;color:#442200;letter-spacing:1px;">
                         NO ACTIVE PROJECTS — Forge a blueprint and click "Send to Workshop" to start tracking a build.
@@ -1316,7 +1339,7 @@ def tab_workshop():
                         bar_color = "#ff6600" if pct < 100 else "#00cc66"
                         diff_stars = "★" * p["difficulty"] + "☆" * (10 - p["difficulty"])
 
-                        st.html(f"""
+                        safe_html(f"""
                         <div style="background:#0d0d0d;border:1px solid #1a1a1a;border-left:3px solid {'#00cc66' if phase == 'complete' else '#ff6600'};
                             padding:18px 24px;margin-bottom:6px;position:relative;overflow:hidden;">
                             <div style="position:absolute;bottom:0;left:0;width:{pct}%;height:2px;background:{bar_color};transition:width .3s;"></div>
@@ -1345,7 +1368,7 @@ def tab_workshop():
                         </div>""")
 
                     # Project selector
-                    st.html("<div style='height:12px'></div>")
+                    safe_html("<div style='height:12px'></div>")
                     project_options = {f"#{p['id']} — {p['title']}": p["id"] for p in projects}
                     selected = st.selectbox("SELECT PROJECT TO OPEN", list(project_options.keys()))
                     if st.button("🔍  OPEN PROJECT"):
@@ -1355,7 +1378,7 @@ def tab_workshop():
             else:
                 st.error(f"Workshop unavailable: {resp.status_code}")
         except Exception as e:
-            st.html(f"""
+            safe_html(f"""
             <div style="border:1px solid #1a0a00;border-left:3px solid #442200;padding:20px 28px;
                 font-family:Share Tech Mono,monospace;font-size:10px;color:#442200;">
                 WORKSHOP OFFLINE — Service starting up.<br>
@@ -1386,7 +1409,7 @@ def tab_workshop():
 
         # ── Project Header ──
         pct = proj["progress_percent"]
-        st.html(f"""
+        safe_html(f"""
         <div style="background:linear-gradient(135deg,#0f0900,#0d0d0d);border:1px solid #2a1500;
             border-top:3px solid #ff6600;padding:24px 28px;margin-bottom:20px;position:relative;overflow:hidden;">
             <div style="position:absolute;bottom:0;left:0;width:{pct}%;height:3px;
@@ -1408,7 +1431,7 @@ def tab_workshop():
         </div>""")
 
         # ── Phase Pipeline ──
-        st.html("""
+        safe_html("""
         <div style="font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:3px;color:#442200;margin-bottom:12px;">
             ── BUILD PIPELINE ──
         </div>""")
@@ -1423,7 +1446,7 @@ def tab_workshop():
                 border_color = "#ff6600" if is_current else "#00cc66" if is_done else "#1a1a1a"
                 bg = "rgba(255,100,0,.06)" if is_current else "rgba(0,200,100,.04)" if is_done else "#0d0d0d"
 
-                st.html(f"""
+                safe_html(f"""
                 <div style="background:{bg};border:1px solid {border_color};
                     {'border-top:3px solid ' + border_color + ';' if is_current else ''}
                     padding:12px 10px;text-align:center;min-height:90px;">
@@ -1438,7 +1461,7 @@ def tab_workshop():
                     </div>
                 </div>""")
 
-        st.html("<div style='height:16px'></div>")
+        safe_html("<div style='height:16px'></div>")
 
         # ── Advance Phase Button ──
         current_phase = proj["current_phase"]
@@ -1469,7 +1492,7 @@ def tab_workshop():
                         except Exception as e:
                             st.error(f"Error: {e}")
 
-        st.html("<div style='height:20px'></div>")
+        safe_html("<div style='height:20px'></div>")
 
         # ── Two-column: Tasks + Parts ──
         col_left, col_right = st.columns([1.3, 1])
@@ -1484,7 +1507,7 @@ def tab_workshop():
                     break
 
             if not current_tasks:
-                st.html("<div style='font-family:Share Tech Mono,monospace;font-size:10px;color:#442200;'>No tasks for this phase.</div>")
+                safe_html("<div style='font-family:Share Tech Mono,monospace;font-size:10px;color:#442200;'>No tasks for this phase.</div>")
             else:
                 for task in current_tasks:
                     is_done = task["is_complete"]
@@ -1520,7 +1543,7 @@ def tab_workshop():
             ps = proj.get("parts_summary", {})
 
             if parts:
-                st.html(f"""
+                safe_html(f"""
                 <div style="font-family:'Share Tech Mono',monospace;font-size:9px;color:#555;margin-bottom:10px;">
                     {ps.get('installed', 0)} installed · {ps.get('sourced', 0)} sourced ·
                     {ps.get('needed', 0)} needed · ${ps.get('total_value', 0):,.0f} est. value
@@ -1530,7 +1553,7 @@ def tab_workshop():
                     status_color = PART_STATUS_COLORS.get(part["status"], "#666")
                     source_tag = f"[{part['source']}]" if part["source"] != "salvage" else ""
 
-                    st.html(f"""
+                    safe_html(f"""
                     <div style="background:#0c0c0c;border:1px solid #1a1a1a;border-left:3px solid {status_color};
                         padding:8px 12px;margin-bottom:3px;font-family:'Share Tech Mono',monospace;font-size:9px;">
                         <span style="color:#ff6600;">{esc(part['name'])}</span>
@@ -1541,19 +1564,19 @@ def tab_workshop():
                     </div>""")
 
                 if len(parts) > 20:
-                    st.html(f"<div style='font-family:Share Tech Mono;font-size:8px;color:#442200;'>...and {len(parts) - 20} more parts</div>")
+                    safe_html(f"<div style='font-family:Share Tech Mono;font-size:8px;color:#442200;'>...and {len(parts) - 20} more parts</div>")
             else:
-                st.html("<div style='font-family:Share Tech Mono,monospace;font-size:10px;color:#442200;'>No parts tracked yet.</div>")
+                safe_html("<div style='font-family:Share Tech Mono,monospace;font-size:10px;color:#442200;'>No parts tracked yet.</div>")
 
         # ── Build Notes ──
-        st.html("<div style='height:20px'></div>")
+        safe_html("<div style='height:20px'></div>")
         sec_head("", "BUILD LOG")
 
         notes = proj.get("notes", [])
         if notes:
             for note in notes[:10]:
                 note_icon = {"safety": "⚠️", "tools": "🔧", "phase_change": "⏭", "log": "📝"}.get(note["note_type"], "📝")
-                st.html(f"""
+                safe_html(f"""
                 <div class="admin-row">
                     <span style="color:#ff6600;">{note_icon}</span>&nbsp;
                     <span style="color:#888;">{esc(note['content'][:200])}</span>
@@ -1596,20 +1619,20 @@ def tab_admin():
             # Revenue metrics
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.html(metric_card(rev.get("estimated_mrr", "$0"), "EST. MONTHLY REVENUE"))
+                safe_html(metric_card(rev.get("estimated_mrr", "$0"), "EST. MONTHLY REVENUE"))
             with col2:
-                st.html(metric_card(lic.get("active", 0), "ACTIVE LICENSES"))
+                safe_html(metric_card(lic.get("active", 0), "ACTIVE LICENSES"))
             with col3:
-                st.html(metric_card(lic.get("expiring_soon", 0), "EXPIRING SOON"))
+                safe_html(metric_card(lic.get("expiring_soon", 0), "EXPIRING SOON"))
 
-            st.html("<div style='height:24px'></div>")
+            safe_html("<div style='height:24px'></div>")
 
             col1, col2 = st.columns(2)
 
             with col1:
                 sec_head("", "RECENT SIGNUPS")
                 for u in dash.get("recent_signups", []):
-                    st.html(f"""
+                    safe_html(f"""
                     <div class="admin-row">
                         <span style="color:#ff6600;">{esc(u['name'])}</span> · {esc(u['email'])}<br>
                         <span style="color:#555;font-size:8px;">{esc(u['tier']).upper()} · {esc(u['joined'][:10])}</span>
@@ -1659,7 +1682,7 @@ def tab_admin():
                         st.success("✅ Revoked!") if r.status_code == 200 else st.error(f"Failed: {r.status_code}")
 
             # All users
-            st.html("<div style='height:24px'></div>")
+            safe_html("<div style='height:24px'></div>")
             sec_head("", "ALL USERS")
             ur = httpx.get(
                 f"{ADMIN_SERVICE_URL}/users",
@@ -1668,7 +1691,7 @@ def tab_admin():
             if ur.status_code == 200:
                 for u in ur.json():
                     exp_color = "#ff4444" if u["status"] != "active" else "#888"
-                    st.html(f"""
+                    safe_html(f"""
                     <div class="admin-row">
                         <span style="color:#ff6600;font-family:'Share Tech Mono',monospace;font-size:10px;">
                             {esc(u['license_key'])}
