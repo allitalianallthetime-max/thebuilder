@@ -1,7 +1,17 @@
 """
 builder_styles.py
-Inject this via st.markdown() at the top of app.py
-Pure CSS + HTML — no external JS dependencies beyond Google Fonts
+=================
+ALTERNATIVE style sheet for The Builder UI.
+Contains a different visual theme (Black Ops One fonts, scanlines, etc.)
+
+CURRENTLY UNUSED — app.py has its own inline CSS.
+
+To use this instead, add to app.py after imports:
+    from builder_styles import BUILDER_CSS, FORGE_HEADER_HTML
+    st.markdown(BUILDER_CSS, unsafe_allow_html=True)
+    st.markdown(FORGE_HEADER_HTML, unsafe_allow_html=True)
+
+No external JS dependencies beyond Google Fonts.
 """
 
 BUILDER_CSS = """
