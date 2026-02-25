@@ -11,13 +11,15 @@ Every build is saved to PostgreSQL.
 """
 
 import os
+import asyncio
 import psycopg2
+import psycopg2.pool
 import httpx
 import anthropic
 import google.generativeai as genai
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
-from contextlib import contextmanager
+from typing import Optional
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -32,22 +34,31 @@ XAI_API_KEY       = os.getenv("XAI_API_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 GEMINI_API_KEY    = os.getenv("GEMINI_API_KEY")
 
-# Configure AI clients
+# Configure AI clients — use ASYNC clients so we don't block the event loop
 genai.configure(api_key=GEMINI_API_KEY)
-anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+anthropic_client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 
-# ── Database ──────────────────────────────────────────────────────────────────
-@contextmanager
-def get_db():
-    conn = psycopg2.connect(DATABASE_URL)
-    try:
-        yield conn
-    finally:
-        conn.close()
+# ── Database (connection pool) ────────────────────────────────────────────────
+db_pool = None
+
+def get_pool():
+    global db_pool
+    if db_pool is None:
+        db_pool = psycopg2.pool.ThreadedConnectionPool(
+            minconn=2, maxconn=10, dsn=DATABASE_URL
+        )
+    return db_pool
+
+def get_conn():
+    return get_pool().getconn()
+
+def put_conn(conn):
+    get_pool().putconn(conn)
 
 def init_db():
     """Create builds table if it doesn't exist."""
-    with get_db() as conn:
+    conn = get_conn()
+    try:
         with conn.cursor() as cur:
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS builds (
@@ -63,6 +74,8 @@ def init_db():
                 )
             """)
             conn.commit()
+    finally:
+        put_conn(conn)
 
 try:
     init_db()
@@ -73,13 +86,21 @@ except Exception as e:
 class BuildRequest(BaseModel):
     junk_desc:    str
     project_type: str
+    detail_level: str = "Full Blueprint (All 3 Tiers)"
     user_email:   str = "anonymous"
+
+# ── Detail level → prompt modifier ────────────────────────────────────────────
+DETAIL_PROMPTS = {
+    "Full Blueprint (All 3 Tiers)": "Include Novice, Journeyman, and Master tiers with full detail.",
+    "Quick Concept (Novice Only)":  "Only provide the NOVICE TIER — basic build, minimum tools, beginner-friendly.",
+    "Master Build (Expert Only)":   "Only provide the MASTER TIER — full integration, advanced techniques, Python control.",
+}
 
 # ── THE SHOP FOREMAN (Grok) ───────────────────────────────────────────────────
 async def get_grok_response(junk_desc: str, project_type: str) -> str:
     """Grok: Raw mechanical logic, grease-under-the-fingernails engineering."""
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
                 "https://api.x.ai/v1/chat/completions",
                 headers={
@@ -87,7 +108,7 @@ async def get_grok_response(junk_desc: str, project_type: str) -> str:
                     "Content-Type": "application/json"
                 },
                 json={
-                    "model": "grok-beta",
+                    "model": "grok-3",
                     "messages": [
                         {
                             "role": "system",
@@ -116,10 +137,10 @@ async def get_grok_response(junk_desc: str, project_type: str) -> str:
 
 # ── THE PRECISION ENGINEER (Claude) ──────────────────────────────────────────
 async def get_claude_response(junk_desc: str, project_type: str, grok_notes: str) -> str:
-    """Claude: Control systems, Python code, electrical schematics."""
+    """Claude: Control systems, Python code, electrical schematics. Now fully async."""
     try:
-        message = anthropic_client.messages.create(
-            model="claude-opus-4-20250514",
+        message = await anthropic_client.messages.create(
+            model="claude-sonnet-4-20250514",
             max_tokens=1024,
             messages=[
                 {
@@ -148,11 +169,14 @@ async def get_gemini_response(
     junk_desc: str,
     project_type: str,
     grok_notes: str,
-    claude_notes: str
+    claude_notes: str,
+    detail_level: str = "Full Blueprint (All 3 Tiers)"
 ) -> str:
-    """Gemini: Synthesizes all inputs into the final tiered blueprint."""
+    """Gemini: Synthesizes all inputs into the final tiered blueprint. Now fully async."""
+    detail_instruction = DETAIL_PROMPTS.get(detail_level, DETAIL_PROMPTS["Full Blueprint (All 3 Tiers)"])
+
     try:
-        model = genai.GenerativeModel("gemini-1.5-pro")
+        model = genai.GenerativeModel("gemini-2.0-flash")
         prompt = f"""You are the General Contractor overseeing a Round Table of elite engineers.
 
 SHOP FOREMAN (Grok) — MECHANICAL ANALYSIS:
@@ -162,6 +186,8 @@ PRECISION ENGINEER (Claude) — ELECTRICAL & CODE:
 {claude_notes}
 
 YOUR TASK: Synthesize a legendary tiered blueprint for a {project_type} built from: {junk_desc}
+
+DETAIL LEVEL: {detail_instruction}
 
 Format your response EXACTLY as follows:
 
@@ -201,7 +227,8 @@ Format your response EXACTLY as follows:
 
 **Always wear PPE. No weapons. Build for the future.**
 """
-        response = model.generate_content(prompt)
+        # Use async generation to avoid blocking the event loop
+        response = await model.generate_content_async(prompt)
         return response.text
     except Exception as e:
         return f"[GENERAL CONTRACTOR OFFLINE] Gemini unavailable. Error: {str(e)}"
@@ -214,22 +241,25 @@ def save_build(
     blueprint: str,
     grok_notes: str,
     claude_notes: str
-) -> int:
+) -> Optional[int]:
+    conn = get_conn()
     try:
-        with get_db() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    INSERT INTO builds
-                        (user_email, junk_desc, project_type, blueprint, grok_notes, claude_notes, created_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    RETURNING id
-                """, (user_email, junk_desc, project_type, blueprint, grok_notes, claude_notes, datetime.utcnow()))
-                build_id = cur.fetchone()[0]
-                conn.commit()
-                return build_id
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO builds
+                    (user_email, junk_desc, project_type, blueprint, grok_notes, claude_notes, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            """, (user_email, junk_desc, project_type, blueprint, grok_notes, claude_notes, datetime.utcnow()))
+            build_id = cur.fetchone()[0]
+            conn.commit()
+            return build_id
     except Exception as e:
+        conn.rollback()
         print(f"DB Save Error: {e}")
         return None
+    finally:
+        put_conn(conn)
 
 # ── ENDPOINTS ─────────────────────────────────────────────────────────────────
 @app.post("/generate")
@@ -249,11 +279,12 @@ async def generate_blueprint(
 
     # Step 3: General Contractor synthesizes the final blueprint
     final_blueprint = await get_gemini_response(
-        req.junk_desc, req.project_type, grok_notes, claude_notes
+        req.junk_desc, req.project_type, grok_notes, claude_notes, req.detail_level
     )
 
-    # Save everything to the database
-    build_id = save_build(
+    # Save everything to the database (runs in thread to avoid blocking)
+    build_id = await asyncio.to_thread(
+        save_build,
         req.junk_desc, req.project_type, req.user_email,
         final_blueprint, grok_notes, claude_notes
     )
@@ -273,13 +304,16 @@ async def get_all_builds(x_internal_key: str = Header(None)):
     if x_internal_key != INTERNAL_API_KEY:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
-    with get_db() as conn:
+    conn = get_conn()
+    try:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT id, user_email, project_type, junk_desc, created_at
                 FROM builds ORDER BY created_at DESC LIMIT 100
             """)
             rows = cur.fetchall()
+    finally:
+        put_conn(conn)
 
     return [
         {"id": r[0], "email": r[1], "type": r[2], "parts": r[3][:80], "created": str(r[4])}
@@ -291,10 +325,17 @@ async def get_build(build_id: int, x_internal_key: str = Header(None)):
     if x_internal_key != INTERNAL_API_KEY:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
-    with get_db() as conn:
+    conn = get_conn()
+    try:
         with conn.cursor() as cur:
-            cur.execute("SELECT * FROM builds WHERE id = %s", (build_id,))
+            cur.execute("""
+                SELECT id, user_email, junk_desc, project_type,
+                       blueprint, grok_notes, claude_notes, tokens_used, created_at
+                FROM builds WHERE id = %s
+            """, (build_id,))
             row = cur.fetchone()
+    finally:
+        put_conn(conn)
 
     if not row:
         raise HTTPException(status_code=404, detail="Build not found")
