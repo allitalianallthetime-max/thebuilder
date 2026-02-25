@@ -578,9 +578,20 @@ def render_header():
 def tab_new_build():
     sec_head("01", "LOAD THE WORKBENCH")
 
+    # Check for prefill from X-Ray Scanner
+    prefill = st.session_state.pop("prefill_workbench", "")
+    if prefill:
+        st.markdown("""
+        <div style="font-family:'Share Tech Mono',monospace;font-size:9px;color:#00cc66;
+            border:1px solid rgba(0,200,100,.3);border-left:3px solid #00cc66;
+            padding:10px 14px;margin-bottom:12px;">
+            ✅ WORKBENCH LOADED FROM X-RAY SCAN — Parts list populated below. Hit FORGE to build.
+        </div>""", unsafe_allow_html=True)
+
     junk_input = st.text_area(
         "PARTS ON THE WORKBENCH",
-        placeholder="Example: GE Aestiva 5 Anesthesia Machine, hydraulic rams, titanium plate, servo motors, 3-phase motor...",
+        value=prefill,
+        placeholder="Example: GE Aestiva 5 Anesthesia Machine, hydraulic rams, titanium plate, servo motors, 3-phase motor...\n\n💡 TIP: Use the X-RAY SCANNER tab to upload a photo and auto-populate this field.",
         height=150
     )
 
@@ -849,6 +860,379 @@ def tab_analytics():
             st.error("Analytics service unavailable")
     except Exception as e:
         st.info(f"Analytics offline: {e}")
+
+
+# ════════════════════════════════════════════════════════════
+#   TAB: X-RAY SCANNER
+# ════════════════════════════════════════════════════════════
+HAZARD_COLORS = {"none": "#00cc66", "low": "#00cc66", "medium": "#ffaa00",
+                 "high": "#ff4444", "critical": "#ff0000", "unknown": "#666"}
+
+def tab_scanner():
+    sec_head("02", "X-RAY SCANNER")
+
+    st.markdown("""
+    <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:#555;
+        border:1px solid #1a1a1a;border-left:3px solid #ff6600;padding:14px 20px;margin-bottom:20px;">
+        📸 Upload a photo of any equipment, machine, or junk pile.<br>
+        The AI will identify it, map the schematics, and break down every salvageable component.
+    </div>""", unsafe_allow_html=True)
+
+    # ── Upload Section ──
+    col_upload, col_context = st.columns([1.2, 1])
+
+    with col_upload:
+        uploaded_file = st.file_uploader(
+            "DROP EQUIPMENT PHOTO",
+            type=["jpg", "jpeg", "png", "webp"],
+            help="JPEG, PNG, or WebP. Max 20MB."
+        )
+
+        if uploaded_file:
+            st.image(uploaded_file, caption=f"📸 {uploaded_file.name}", use_container_width=True)
+
+    with col_context:
+        scan_context = st.text_area(
+            "ADDITIONAL CONTEXT (OPTIONAL)",
+            placeholder="e.g. 'Found in a hospital basement, looks like a ventilator from the 90s, has a compressor on the side...'",
+            height=120
+        )
+        st.markdown("""
+        <div style="font-family:'Share Tech Mono',monospace;font-size:8px;color:#333;margin-top:8px;">
+            Adding context helps the AI identify obscure equipment more accurately.
+        </div>""", unsafe_allow_html=True)
+
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+
+    if st.button("🔬  INITIATE X-RAY SCAN"):
+        if not uploaded_file:
+            st.warning("⚠  Upload a photo first.")
+        else:
+            with st.spinner("X-RAY SCAN IN PROGRESS... Gemini is analyzing schematics, identifying components, assessing hazards..."):
+                try:
+                    import base64 as b64mod
+                    img_bytes = uploaded_file.getvalue()
+                    img_b64   = b64mod.b64encode(img_bytes).decode("utf-8")
+                    mime      = uploaded_file.type or "image/jpeg"
+
+                    resp = httpx.post(
+                        f"{WORKSHOP_SERVICE_URL}/scan/base64",
+                        json={
+                            "image_base64": f"data:{mime};base64,{img_b64}",
+                            "user_email":   st.session_state.user_email or "anonymous",
+                            "context":      scan_context
+                        },
+                        headers=api_headers(),
+                        timeout=120.0
+                    )
+
+                    if resp.status_code == 200:
+                        st.session_state.last_scan = resp.json()
+                        st.rerun()
+                    else:
+                        st.error(f"⛔ Scan failed: {resp.status_code} — {resp.text[:200]}")
+                except Exception as e:
+                    st.error(f"⛔ Scanner offline: {e}")
+
+    # ── SCAN RESULTS ──
+    scan = st.session_state.get("last_scan")
+    if scan and scan.get("scan_result"):
+        result  = scan["scan_result"]
+        ident   = result.get("identification", {})
+        schema  = result.get("schematics", {})
+        specs   = result.get("specifications", {})
+        comps   = result.get("components", [])
+        hazards = result.get("hazards", {})
+        salvage = result.get("salvage_assessment", {})
+        builds  = result.get("build_potential", [])
+
+        hazard_level = hazards.get("level", "unknown")
+        hazard_color = HAZARD_COLORS.get(hazard_level, "#666")
+
+        # ── IDENTIFICATION HEADER ──
+        st.markdown(f"""
+        <div style="background:linear-gradient(135deg,#0f0900,#0d0d0d);border:1px solid #2a1500;
+            border-top:3px solid #ff6600;padding:28px 32px;margin:20px 0;position:relative;">
+            <div style="position:absolute;top:10px;right:14px;font-family:'Share Tech Mono',monospace;
+                font-size:8px;color:{hazard_color};border:1px solid {hazard_color};padding:4px 10px;
+                letter-spacing:2px;">
+                ⚠ HAZARD: {esc(hazard_level).upper()}
+            </div>
+            <div style="font-family:'Bebas Neue',sans-serif;font-size:42px;color:#ff6600;
+                letter-spacing:4px;line-height:1;">
+                {esc(ident.get('equipment_name', 'UNKNOWN EQUIPMENT'))}
+            </div>
+            <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:#888;
+                margin-top:6px;letter-spacing:2px;">
+                {esc(ident.get('manufacturer', ''))} &nbsp;·&nbsp;
+                MODEL: {esc(ident.get('model', 'N/A'))} &nbsp;·&nbsp;
+                ERA: {esc(ident.get('year_range', 'N/A'))} &nbsp;·&nbsp;
+                CLASS: {esc(ident.get('category', '').upper())}
+            </div>
+            <div style="font-family:'Rajdhani',sans-serif;font-size:14px;color:#b08050;margin-top:10px;">
+                {esc(ident.get('original_purpose', ''))}
+            </div>
+            <div style="display:flex;gap:20px;margin-top:14px;font-family:'Share Tech Mono',monospace;font-size:9px;">
+                <span style="color:#ff6600;">⚙ {len(comps)} COMPONENTS</span>
+                <span style="color:#00cc66;">${salvage.get('total_estimated_value', 0):,.0f} EST. SALVAGE</span>
+                <span style="color:#ffaa00;">🔧 {salvage.get('teardown_hours', 0):.0f}hrs TEARDOWN</span>
+                <span style="color:#cc88ff;">DIFFICULTY: {'★' * salvage.get('teardown_difficulty', 5)}{'☆' * (10 - salvage.get('teardown_difficulty', 5))}</span>
+            </div>
+        </div>""", unsafe_allow_html=True)
+
+        # ── METRICS ROW ──
+        mc1, mc2, mc3, mc4 = st.columns(4)
+        with mc1:
+            st.markdown(metric_card(len(comps), "COMPONENTS FOUND"), unsafe_allow_html=True)
+        with mc2:
+            st.markdown(metric_card(f"${salvage.get('total_estimated_value', 0):,.0f}", "SALVAGE VALUE"), unsafe_allow_html=True)
+        with mc3:
+            st.markdown(metric_card(f"{salvage.get('teardown_hours', 0):.0f}h", "TEARDOWN TIME"), unsafe_allow_html=True)
+        with mc4:
+            st.markdown(metric_card(hazard_level.upper(), "HAZARD LEVEL"), unsafe_allow_html=True)
+
+        st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+
+        # ── SCHEMATICS ──
+        if schema:
+            sec_head("", "INTERNAL SCHEMATICS")
+            schema_fields = [
+                ("system_overview",    "🏗 SYSTEM OVERVIEW"),
+                ("power_system",       "⚡ POWER SYSTEM"),
+                ("control_system",     "🖥 CONTROL SYSTEM"),
+                ("mechanical_systems", "⚙ MECHANICAL SYSTEMS"),
+                ("fluid_systems",      "💧 FLUID SYSTEMS"),
+                ("signal_chain",       "📡 SIGNAL CHAIN"),
+            ]
+            for key, label in schema_fields:
+                val = schema.get(key)
+                if val:
+                    st.markdown(f"""
+                    <div style="background:#0c0c0c;border:1px solid #1a1a1a;border-left:3px solid #ff6600;
+                        padding:12px 18px;margin-bottom:4px;">
+                        <div style="font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:2px;
+                            color:#ff6600;margin-bottom:6px;">{label}</div>
+                        <div style="font-family:'Rajdhani',sans-serif;font-size:13px;color:#c8b890;line-height:1.7;">
+                            {esc(val)}
+                        </div>
+                    </div>""", unsafe_allow_html=True)
+
+            # ASCII electrical diagram
+            elec = schema.get("electrical_diagram")
+            if elec:
+                st.markdown(f"""
+                <div style="background:#0a0a0a;border:1px solid #2a1500;padding:18px 22px;margin:10px 0;">
+                    <div style="font-family:'Share Tech Mono',monospace;font-size:8px;color:#ff6600;
+                        letter-spacing:2px;margin-bottom:8px;">⚡ ELECTRICAL FLOW DIAGRAM</div>
+                    <pre style="font-family:'Share Tech Mono',monospace;font-size:11px;color:#00cc66;
+                        margin:0;white-space:pre-wrap;line-height:1.5;">{esc(elec)}</pre>
+                </div>""", unsafe_allow_html=True)
+
+        st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+
+        # ── SPECS + HAZARDS side by side ──
+        col_specs, col_hazards = st.columns(2)
+
+        with col_specs:
+            sec_head("", "SPECIFICATIONS")
+            if specs:
+                for key, val in specs.items():
+                    if val and key != "other_specs":
+                        st.markdown(f"""
+                        <div class="admin-row">
+                            <span style="color:#ff6600;">{esc(key.replace('_', ' ').upper())}</span>
+                            &nbsp;·&nbsp; <span style="color:#c8b890;">{esc(val)}</span>
+                        </div>""", unsafe_allow_html=True)
+                for extra in specs.get("other_specs", []):
+                    if extra:
+                        st.markdown(f"""
+                        <div class="admin-row">
+                            <span style="color:#888;">{esc(extra)}</span>
+                        </div>""", unsafe_allow_html=True)
+
+        with col_hazards:
+            sec_head("", "HAZARD ASSESSMENT")
+            if hazards:
+                for w in hazards.get("warnings", []):
+                    st.markdown(f"""
+                    <div style="background:rgba(255,68,68,.08);border:1px solid rgba(255,68,68,.3);
+                        border-left:3px solid {hazard_color};padding:10px 14px;margin-bottom:4px;
+                        font-family:'Share Tech Mono',monospace;font-size:10px;color:#ff8888;">
+                        ⚠ {esc(w)}
+                    </div>""", unsafe_allow_html=True)
+
+                ppe = hazards.get("required_ppe", [])
+                if ppe:
+                    ppe_text = " · ".join(esc(p) for p in ppe)
+                    st.markdown(f"""
+                    <div style="font-family:'Share Tech Mono',monospace;font-size:9px;color:#ffaa00;
+                        margin-top:8px;letter-spacing:1px;">
+                        🛡 REQUIRED PPE: {ppe_text}
+                    </div>""", unsafe_allow_html=True)
+
+                lockout = hazards.get("lockout_tagout")
+                if lockout:
+                    st.markdown(f"""
+                    <div style="font-family:'Share Tech Mono',monospace;font-size:9px;color:#ff4444;
+                        margin-top:6px;">🔒 LOCKOUT/TAGOUT: {esc(lockout)}</div>""", unsafe_allow_html=True)
+
+        st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+
+        # ── COMPONENT TEARDOWN TABLE ──
+        sec_head("", f"COMPONENT TEARDOWN — {len(comps)} PARTS")
+
+        if comps:
+            # Group by category
+            cats = {}
+            for c in comps:
+                cat = c.get("category", "other") if isinstance(c, dict) else "other"
+                cats.setdefault(cat, []).append(c)
+
+            for cat_name, cat_parts in sorted(cats.items()):
+                st.markdown(f"""
+                <div style="font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:3px;
+                    color:#442200;margin:12px 0 6px;border-bottom:1px solid #1a1a1a;padding-bottom:4px;">
+                    ── {esc(cat_name).upper()} ({len(cat_parts)}) ──
+                </div>""", unsafe_allow_html=True)
+
+                for comp in cat_parts:
+                    if not isinstance(comp, dict):
+                        continue
+                    reuse = comp.get("reuse_potential", "medium")
+                    reuse_color = {"high": "#00cc66", "medium": "#ffaa00", "low": "#ff4444"}.get(reuse, "#888")
+                    val = comp.get("salvage_value", 0)
+                    qty = comp.get("quantity", 1)
+
+                    st.markdown(f"""
+                    <div style="background:#0c0c0c;border:1px solid #1a1a1a;border-left:3px solid {reuse_color};
+                        padding:10px 16px;margin-bottom:3px;display:flex;justify-content:space-between;align-items:center;">
+                        <div>
+                            <span style="font-family:'Share Tech Mono',monospace;font-size:11px;color:#ff6600;">
+                                {esc(comp.get('name', '?'))}</span>
+                            {'<span style="color:#555;font-size:9px;"> ×' + str(qty) + '</span>' if qty > 1 else ''}
+                            <br>
+                            <span style="font-family:'Share Tech Mono',monospace;font-size:8px;color:#555;">
+                                {esc(comp.get('location', ''))}
+                                {(' — ' + esc(comp.get('specifications', ''))) if comp.get('specifications') else ''}
+                            </span>
+                            <br>
+                            <span style="font-family:'Share Tech Mono',monospace;font-size:8px;color:#444;">
+                                {esc(comp.get('condition_notes', ''))}
+                            </span>
+                        </div>
+                        <div style="text-align:right;white-space:nowrap;">
+                            <span style="font-family:'Bebas Neue',sans-serif;font-size:18px;color:#00cc66;">
+                                ${val:,.0f}</span><br>
+                            <span style="font-family:'Share Tech Mono',monospace;font-size:7px;color:{reuse_color};
+                                letter-spacing:1px;">{esc(reuse).upper()} REUSE</span>
+                        </div>
+                    </div>""", unsafe_allow_html=True)
+
+        # ── BUILD POTENTIAL ──
+        if builds:
+            st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+            sec_head("", "BUILD POTENTIAL — What could this become?")
+            for i, idea in enumerate(builds):
+                st.markdown(f"""
+                <div class="admin-row">
+                    <span style="color:#ff6600;font-family:'Bebas Neue',sans-serif;font-size:16px;
+                        letter-spacing:2px;">IDEA {i+1}</span>
+                    &nbsp;·&nbsp;
+                    <span style="color:#c8b890;">{esc(idea)}</span>
+                </div>""", unsafe_allow_html=True)
+
+        # ── ACTION BUTTONS ──
+        st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+        st.markdown("""
+        <div style="font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:3px;
+            color:#442200;margin-bottom:12px;">── ACTIONS ──</div>""", unsafe_allow_html=True)
+
+        acol1, acol2, acol3 = st.columns(3)
+
+        with acol1:
+            if st.button("📋  SEND TO WORKBENCH"):
+                try:
+                    r = httpx.post(
+                        f"{WORKSHOP_SERVICE_URL}/scans/{scan['scan_id']}/to-workbench",
+                        headers=api_headers(), timeout=10.0
+                    )
+                    if r.status_code == 200:
+                        wb = r.json()
+                        st.session_state["prefill_workbench"] = wb["workbench_text"]
+                        st.success(f"✅ {wb['parts_count']} components loaded to workbench! Switch to NEW BUILD tab.")
+                    else:
+                        st.error("Could not generate workbench text")
+                except Exception as e:
+                    st.error(f"Error: {e}")
+
+        with acol2:
+            if st.button("🔩  SEND TO WORKSHOP"):
+                try:
+                    wb_resp = httpx.post(
+                        f"{WORKSHOP_SERVICE_URL}/scans/{scan['scan_id']}/to-workbench",
+                        headers=api_headers(), timeout=10.0
+                    )
+                    wb_text = wb_resp.json().get("workbench_text", "") if wb_resp.status_code == 200 else ident.get("equipment_name", "Scanned Equipment")
+
+                    r = httpx.post(
+                        f"{WORKSHOP_SERVICE_URL}/projects/create",
+                        json={
+                            "user_email":   st.session_state.user_email or "anonymous",
+                            "title":        f"SCAN: {ident.get('equipment_name', 'Unknown')}",
+                            "project_type": ident.get("category", "other").replace("_", " ").title(),
+                            "junk_desc":    wb_text,
+                        },
+                        headers=api_headers(), timeout=60.0
+                    )
+                    if r.status_code == 200:
+                        d = r.json()
+                        st.success(f"✅ Workshop Project #{d['project_id']} created from scan!")
+                    else:
+                        st.error(f"Workshop error: {r.status_code}")
+                except Exception as e:
+                    st.error(f"Error: {e}")
+
+        with acol3:
+            if st.button("🔬  NEW SCAN"):
+                st.session_state.last_scan = None
+                st.rerun()
+
+    # ── SCAN HISTORY ──
+    st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+    sec_head("", "SCAN HISTORY")
+
+    try:
+        resp = httpx.get(f"{WORKSHOP_SERVICE_URL}/scans",
+                         headers=api_headers(), timeout=10.0)
+        if resp.status_code == 200:
+            scans = resp.json()
+            if scans:
+                for s in scans[:10]:
+                    hz_color = HAZARD_COLORS.get(s.get("hazard_level", "unknown"), "#666")
+                    st.markdown(f"""
+                    <div class="history-row">
+                        <div>
+                            <span style="font-family:'Bebas Neue',sans-serif;font-size:16px;color:#ff6600;letter-spacing:2px;">
+                                🔬 {esc(s['equipment_name'])}
+                            </span><br>
+                            <span style="font-family:'Share Tech Mono',monospace;font-size:9px;color:#555;">
+                                {esc(s.get('manufacturer', ''))} {esc(s.get('model', ''))} &nbsp;·&nbsp;
+                                {s.get('parts_found', 0)} parts &nbsp;·&nbsp;
+                                ${s.get('est_salvage', 0):,.0f} salvage &nbsp;·&nbsp;
+                                <span style="color:{hz_color};">HAZARD: {esc(s.get('hazard_level', '?')).upper()}</span>
+                            </span>
+                        </div>
+                        <div style="text-align:right;font-family:'Share Tech Mono',monospace;font-size:8px;color:#333;">
+                            #{s['id']}<br>{esc(s.get('created_at', '')[:16])}
+                        </div>
+                    </div>""", unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:#442200;">
+                    No scans yet. Upload a photo to start.
+                </div>""", unsafe_allow_html=True)
+    except Exception:
+        pass
 
 
 # ════════════════════════════════════════════════════════════
@@ -1291,7 +1675,7 @@ def main_dashboard():
     render_header()
 
     # Build tab list based on permissions
-    tab_labels = ["⚡  NEW BUILD", "📜  HISTORY", "🔩  WORKSHOP", "📊  ANALYTICS"]
+    tab_labels = ["⚡  NEW BUILD", "🔬  X-RAY SCANNER", "🔩  WORKSHOP", "📜  HISTORY", "📊  ANALYTICS"]
     if st.session_state.is_admin:
         tab_labels.append("🔐  CONTROL ROOM")
 
@@ -1300,13 +1684,15 @@ def main_dashboard():
     with tabs[0]:
         tab_new_build()
     with tabs[1]:
-        tab_history()
+        tab_scanner()
     with tabs[2]:
         tab_workshop()
     with tabs[3]:
+        tab_history()
+    with tabs[4]:
         tab_analytics()
-    if st.session_state.is_admin and len(tabs) > 4:
-        with tabs[4]:
+    if st.session_state.is_admin and len(tabs) > 5:
+        with tabs[5]:
             tab_admin()
 
 
