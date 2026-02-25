@@ -7,20 +7,32 @@ Full dashboard connecting all microservices.
 
 import streamlit as st
 import os
+import html as html_lib
+import secrets
 import httpx
-import json
-from datetime import datetime
 from dotenv import load_dotenv
 
 load_dotenv()
 
+# ── URL Normalizer ────────────────────────────────────────────────────────────
+# Render's RENDER_INTERNAL_HOSTNAME gives bare hostnames (e.g. "builder-auth").
+# We need full URLs like "http://builder-auth:10000".
+def normalize_url(raw: str, default: str) -> str:
+    """Ensure a service URL has protocol and port."""
+    if not raw:
+        return default
+    raw = raw.strip()
+    if raw.startswith("http://") or raw.startswith("https://"):
+        return raw
+    return f"http://{raw}:10000"
+
 # ── Configuration ─────────────────────────────────────────────────────────────
-AUTH_SERVICE_URL      = os.getenv("AUTH_SERVICE_URL",      "http://builder-auth:10000")
-AI_SERVICE_URL        = os.getenv("AI_SERVICE_URL",        "http://builder-ai:10000")
-BILLING_SERVICE_URL   = os.getenv("BILLING_SERVICE_URL",   "http://builder-billing:10000")
-ANALYTICS_SERVICE_URL = os.getenv("ANALYTICS_SERVICE_URL", "http://builder-analytics:10000")
-ADMIN_SERVICE_URL     = os.getenv("ADMIN_SERVICE_URL",     "http://builder-admin:10000")
-EXPORT_SERVICE_URL    = os.getenv("EXPORT_SERVICE_URL",    "http://builder-export:10000")
+AUTH_SERVICE_URL      = normalize_url(os.getenv("AUTH_SERVICE_URL", ""),      "http://builder-auth:10000")
+AI_SERVICE_URL        = normalize_url(os.getenv("AI_SERVICE_URL", ""),        "http://builder-ai:10000")
+BILLING_SERVICE_URL   = normalize_url(os.getenv("BILLING_SERVICE_URL", ""),   "http://builder-billing:10000")
+ANALYTICS_SERVICE_URL = normalize_url(os.getenv("ANALYTICS_SERVICE_URL", ""), "http://builder-analytics:10000")
+ADMIN_SERVICE_URL     = normalize_url(os.getenv("ADMIN_SERVICE_URL", ""),     "http://builder-admin:10000")
+EXPORT_SERVICE_URL    = normalize_url(os.getenv("EXPORT_SERVICE_URL", ""),    "http://builder-export:10000")
 INTERNAL_API_KEY      = os.getenv("INTERNAL_API_KEY")
 MASTER_KEY            = os.getenv("MASTER_KEY")
 STRIPE_PAYMENT_URL    = os.getenv("STRIPE_PAYMENT_URL", "#")
@@ -200,49 +212,59 @@ html, body, .stApp { background-color: var(--dark) !important; color: var(--text
 # ════════════════════════════════════════════════════════════
 #   SESSION STATE
 # ════════════════════════════════════════════════════════════
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
-if "user_tier" not in st.session_state:
-    st.session_state.user_tier = "guest"
-if "user_name" not in st.session_state:
-    st.session_state.user_name = ""
-if "user_email" not in st.session_state:
-    st.session_state.user_email = ""
-if "is_admin" not in st.session_state:
-    st.session_state.is_admin = False
-if "last_blueprint" not in st.session_state:
-    st.session_state.last_blueprint = None
-if "last_build_id" not in st.session_state:
-    st.session_state.last_build_id = None
+_DEFAULTS = {
+    "authenticated":    False,
+    "user_tier":        "guest",
+    "user_name":        "",
+    "user_email":       "",
+    "is_admin":         False,
+    "last_blueprint":   None,
+    "last_build_id":    None,
+    "last_project_type": None,
+    "last_junk_input":  None,
+}
+
+for _key, _val in _DEFAULTS.items():
+    if _key not in st.session_state:
+        st.session_state[_key] = _val
 
 # ════════════════════════════════════════════════════════════
 #   HELPERS
 # ════════════════════════════════════════════════════════════
+def esc(text) -> str:
+    """HTML-escape user data to prevent XSS."""
+    if text is None:
+        return ""
+    return html_lib.escape(str(text))
+
 def api_headers():
     return {"x-internal-key": INTERNAL_API_KEY}
-
-def call_service(method: str, url: str, **kwargs):
-    try:
-        with httpx.Client(timeout=15) as client:
-            resp = getattr(client, method)(url, headers=api_headers(), **kwargs)
-            return resp
-    except Exception as e:
-        return None
 
 def sec_head(num: str, title: str):
     st.markdown(f"""
     <div class="sec-head">
-        <div class="sec-num">{num}</div>
-        <div class="sec-title">{title}</div>
+        <div class="sec-num">{esc(num)}</div>
+        <div class="sec-title">{esc(title)}</div>
         <div class="sec-line"></div>
     </div>""", unsafe_allow_html=True)
 
 def metric_card(value, label):
     return f"""
     <div class="metric-card">
-        <div class="metric-val">{value}</div>
-        <div class="metric-label">{label}</div>
+        <div class="metric-val">{esc(value)}</div>
+        <div class="metric-label">{esc(label)}</div>
     </div>"""
+
+@st.cache_data(ttl=30)
+def check_service_health(url: str) -> tuple:
+    """Check a service health endpoint with 30s cache to avoid blocking sidebar."""
+    try:
+        r = httpx.get(f"{url}/health", headers={"x-internal-key": INTERNAL_API_KEY}, timeout=3)
+        if r.status_code == 200:
+            return ("srv-on", "ONLINE")
+        return ("srv-off", "ERROR")
+    except Exception:
+        return ("srv-off", "OFFLINE")
 
 # ════════════════════════════════════════════════════════════
 #   LANDING PAGE
@@ -414,7 +436,7 @@ def login():
         if st.button("⚡  IGNITE THE FORGE"):
             if not key_input:
                 st.error("⛔  KEY REQUIRED")
-            elif MASTER_KEY and key_input == MASTER_KEY:
+            elif MASTER_KEY and secrets.compare_digest(key_input, MASTER_KEY):
                 st.session_state.authenticated = True
                 st.session_state.is_admin      = True
                 st.session_state.user_name     = "Anthony"
@@ -465,8 +487,8 @@ def login():
 # ════════════════════════════════════════════════════════════
 def render_sidebar():
     with st.sidebar:
-        name  = st.session_state.user_name
-        tier  = st.session_state.user_tier.upper()
+        name  = esc(st.session_state.user_name)
+        tier  = esc(st.session_state.user_tier.upper())
         admin = st.session_state.is_admin
 
         st.markdown(f"""
@@ -476,7 +498,7 @@ def render_sidebar():
             <div class="status-row"><div class="pulse-dot"></div>ALL SYSTEMS OPERATIONAL</div>
         </div>""", unsafe_allow_html=True)
 
-        # Service status
+        # Service status — cached (30s) so sidebar doesn't block on every rerun
         st.markdown("<div class='sb-section'>ACTIVE SERVICES</div>", unsafe_allow_html=True)
         services = [
             ("⚙", "FORGE ENGINE",   AI_SERVICE_URL),
@@ -486,15 +508,10 @@ def render_sidebar():
             ("🗄", "DATABASE",       None),
         ]
         for icon, label, url in services:
-            status = "srv-on"
-            tag    = "ONLINE"
             if url:
-                try:
-                    r = httpx.get(f"{url}/health", headers=api_headers(), timeout=3)
-                    if r.status_code != 200:
-                        status, tag = "srv-off", "ERROR"
-                except:
-                    status, tag = "srv-off", "OFFLINE"
+                status, tag = check_service_health(url)
+            else:
+                status, tag = "srv-on", "ONLINE"
             st.markdown(f"""
             <div class="srv-row">
                 <span>{icon} {label}</span>
@@ -512,8 +529,9 @@ def render_sidebar():
 
         st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
         if st.button("⏻  LOCK GARAGE"):
-            for key in ["authenticated", "user_tier", "user_name", "user_email", "is_admin", "last_blueprint", "last_build_id"]:
-                st.session_state[key] = False if key == "authenticated" else None
+            # Reset ALL session state to correct default types
+            for key, val in _DEFAULTS.items():
+                st.session_state[key] = val
             st.rerun()
 
 
@@ -593,15 +611,18 @@ def tab_new_build():
                         json={
                             "junk_desc":    junk_input,
                             "project_type": project_type,
+                            "detail_level": detail,
                             "user_email":   st.session_state.user_email
                         },
                         headers=api_headers(),
-                        timeout=120.0
+                        timeout=180.0
                     )
                     if resp.status_code == 200:
                         data = resp.json()
-                        st.session_state.last_blueprint = data.get("content", "")
-                        st.session_state.last_build_id  = data.get("build_id")
+                        st.session_state.last_blueprint    = data.get("content", "")
+                        st.session_state.last_build_id     = data.get("build_id")
+                        st.session_state.last_project_type = project_type
+                        st.session_state.last_junk_input   = junk_input
                         st.rerun()
                     else:
                         st.error(f"⛔  FORGE ERROR: {resp.status_code} — {resp.text[:200]}")
@@ -619,6 +640,10 @@ def tab_new_build():
         st.markdown(st.session_state.last_blueprint)
 
         # ── EXPORT BUTTONS ──
+        # Use stored session values so exports always match the blueprint
+        export_type  = st.session_state.last_project_type or project_type
+        export_parts = st.session_state.last_junk_input or junk_input
+
         st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
         st.markdown("""
         <div style="font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:3px;color:#442200;margin-bottom:12px;">
@@ -634,8 +659,8 @@ def tab_new_build():
                         f"{EXPORT_SERVICE_URL}/export/pdf",
                         json={
                             "blueprint":    st.session_state.last_blueprint,
-                            "project_type": project_type,
-                            "junk_desc":    junk_input,
+                            "project_type": export_type,
+                            "junk_desc":    export_parts,
                             "build_id":     st.session_state.last_build_id or 0
                         },
                         headers=api_headers(), timeout=30.0
@@ -659,8 +684,8 @@ def tab_new_build():
                         f"{EXPORT_SERVICE_URL}/export/text",
                         json={
                             "blueprint":    st.session_state.last_blueprint,
-                            "project_type": project_type,
-                            "junk_desc":    junk_input,
+                            "project_type": export_type,
+                            "junk_desc":    export_parts,
                             "build_id":     st.session_state.last_build_id or 0
                         },
                         headers=api_headers(), timeout=15.0
@@ -679,8 +704,10 @@ def tab_new_build():
 
         with col3:
             if st.button("🔄  NEW BUILD"):
-                st.session_state.last_blueprint = None
-                st.session_state.last_build_id  = None
+                st.session_state.last_blueprint    = None
+                st.session_state.last_build_id     = None
+                st.session_state.last_project_type = None
+                st.session_state.last_junk_input   = None
                 st.rerun()
 
 
@@ -709,20 +736,22 @@ def tab_history():
                 </div>""", unsafe_allow_html=True)
 
                 for b in builds:
-                    created = b.get("created", "")[:16].replace("T", " ")
+                    created = esc(b.get("created", "")[:16].replace("T", " "))
+                    parts   = esc(b['parts'][:80])
+                    suffix  = '...' if len(b['parts']) > 80 else ''
                     st.markdown(f"""
                     <div class="history-row">
                         <div>
                             <span style="font-family:'Bebas Neue',sans-serif;font-size:18px;color:#ff6600;letter-spacing:2px;">
-                                #{b['id']} &nbsp; {b['type'].upper()}
+                                #{esc(b['id'])} &nbsp; {esc(b['type']).upper()}
                             </span><br>
                             <span style="font-family:'Share Tech Mono',monospace;font-size:9px;color:#555;">
-                                {b['parts'][:80]}{'...' if len(b['parts']) > 80 else ''}
+                                {parts}{suffix}
                             </span>
                         </div>
                         <div style="text-align:right;font-family:'Share Tech Mono',monospace;font-size:8px;color:#333;">
                             {created}<br>
-                            <span style="color:#442200;">{b.get('email','')[:24]}</span>
+                            <span style="color:#442200;">{esc(b.get('email','')[:24])}</span>
                         </div>
                     </div>""", unsafe_allow_html=True)
         else:
@@ -768,9 +797,9 @@ def tab_analytics():
                     for item in r2.json().get("by_type", []):
                         st.markdown(f"""
                         <div class="admin-row">
-                            <span style="color:#ff6600;">{item['type']}</span>
+                            <span style="color:#ff6600;">{esc(item['type'])}</span>
                             &nbsp;·&nbsp;
-                            <span style="color:#888;">{item['count']} builds</span>
+                            <span style="color:#888;">{esc(item['count'])} builds</span>
                         </div>""", unsafe_allow_html=True)
 
             with col2:
@@ -780,9 +809,9 @@ def tab_analytics():
                     for item in r3.json().get("popular_parts", [])[:8]:
                         st.markdown(f"""
                         <div class="admin-row">
-                            <span style="color:#ff6600;">{item['keyword'].upper()}</span>
+                            <span style="color:#ff6600;">{esc(item['keyword']).upper()}</span>
                             &nbsp;·&nbsp;
-                            <span style="color:#888;">{item['count']} uses</span>
+                            <span style="color:#888;">{esc(item['count'])} uses</span>
                         </div>""", unsafe_allow_html=True)
         else:
             st.error("Analytics service unavailable")
@@ -825,8 +854,8 @@ def tab_admin():
                 for u in dash.get("recent_signups", []):
                     st.markdown(f"""
                     <div class="admin-row">
-                        <span style="color:#ff6600;">{u['name']}</span> · {u['email']}<br>
-                        <span style="color:#555;font-size:8px;">{u['tier'].upper()} · {u['joined'][:10]}</span>
+                        <span style="color:#ff6600;">{esc(u['name'])}</span> · {esc(u['email'])}<br>
+                        <span style="color:#555;font-size:8px;">{esc(u['tier']).upper()} · {esc(u['joined'][:10])}</span>
                     </div>""", unsafe_allow_html=True)
 
             with col2:
@@ -885,13 +914,13 @@ def tab_admin():
                     st.markdown(f"""
                     <div class="admin-row">
                         <span style="color:#ff6600;font-family:'Share Tech Mono',monospace;font-size:10px;">
-                            {u['license_key']}
+                            {esc(u['license_key'])}
                         </span><br>
-                        <span style="color:#888;">{u['name']} · {u['email']}</span>
+                        <span style="color:#888;">{esc(u['name'])} · {esc(u['email'])}</span>
                         &nbsp;&nbsp;
                         <span style="color:{exp_color};font-size:8px;">
-                            {u['status'].upper()} · {u['tier'].upper()} · expires {u['expires_at'][:10]}
-                            · {u['actual_builds']} builds
+                            {esc(u['status']).upper()} · {esc(u['tier']).upper()} · expires {esc(u['expires_at'][:10])}
+                            · {esc(u['actual_builds'])} builds
                         </span>
                     </div>""", unsafe_allow_html=True)
         else:
