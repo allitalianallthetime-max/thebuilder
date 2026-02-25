@@ -1,57 +1,26 @@
 services:
-  # ── 1. THE DASHBOARD (UI) ──────────────────────────────────────────────────
-  - type: web
-    name: builder-ui
-    runtime: python
-    plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: streamlit run app.py
-    envVars:
-      - key: AUTH_SERVICE_URL
-        value: http://builder-auth:10000
-      - key: AI_SERVICE_URL
-        value: http://builder-ai:10000
-      - key: INTERNAL_API_KEY
-        value: 254e4f3f084b4414d43c01edb3e26df0  # <── YOUR CUSTOM KEY HERE
-      - key: MASTER_KEY
-        sync: false
-      - key: PYTHON_VERSION
-        value: 3.11.7
+  # ... (builder-ui and builder-auth stay the same) ...
 
-  # ── 2. THE AI ROUND TABLE (GC, Grok, Claude) ───────────────────────────────
+  # UPDATED AI ENGINE
   - type: web
     name: builder-ai
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn ai_service:app --host 0.0.0.0 --port 10000
     envVars:
+      - key: OPENAI_API_KEY  # <--- ADD THIS IN RENDER DASHBOARD
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
       - key: INTERNAL_API_KEY
-        value: BlackoutLogistics2026!  # <── MUST MATCH THE UI KEY
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: ANTHROPIC_API_KEY
-        sync: false
-      - key: XAI_API_KEY
-        sync: false
+        value: BlackoutLogistics2026!
 
-  # ── 3. THE SECURITY GUARD (Auth) ───────────────────────────────────────────
+  # NEW VISION SERVICE
   - type: web
-    name: builder-auth
+    name: builder-vision
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn auth_service:app --host 0.0.0.0 --port 10000
+    startCommand: uvicorn vision_service:app --host 0.0.0.0 --port 10000
     envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: builder-db
-          property: connectionString
-      - key: INTERNAL_API_KEY
-        value: BlackoutLogistics2026!  # <── MUST MATCH THE UI KEY
-
-# ── 4. THE STORAGE TANK (Database) ───────────────────────────────────────────
-databases:
-  - name: builder-db
-    plan: free
-    postgresMajorVersion: 15
+      - key: GEMINI_API_KEY
+        sync: false
