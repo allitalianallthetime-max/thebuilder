@@ -5,9 +5,3 @@ streamlit
 httpx
 python-dotenv
 pandas
-
-
-
-
-
-
