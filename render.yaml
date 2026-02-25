@@ -7,34 +7,26 @@ services:
     buildCommand: pip install -r requirements-ui.txt
     startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0
     envVars:
+      # NOTE: RENDER_INTERNAL_HOSTNAME returns just the hostname (e.g. builder-auth).
+      # Our code expects full URLs, so we set these manually with the correct format.
+      # On Render internal network, services listen on port 10000 by default.
       - key: AUTH_SERVICE_URL
-        fromService:
-          type: web
-          name: builder-auth
-          envVarKey: RENDER_INTERNAL_HOSTNAME
+        value: http://builder-auth:10000
       - key: AI_SERVICE_URL
-        fromService:
-          type: web
-          name: builder-ai
-          envVarKey: RENDER_INTERNAL_HOSTNAME
+        value: http://builder-ai:10000
       - key: BILLING_SERVICE_URL
-        fromService:
-          type: web
-          name: builder-billing
-          envVarKey: RENDER_INTERNAL_HOSTNAME
+        value: http://builder-billing:10000
       - key: ANALYTICS_SERVICE_URL
-        fromService:
-          type: web
-          name: builder-analytics
-          envVarKey: RENDER_INTERNAL_HOSTNAME
+        value: http://builder-analytics:10000
       - key: ADMIN_SERVICE_URL
-        fromService:
-          type: web
-          name: builder-admin
-          envVarKey: RENDER_INTERNAL_HOSTNAME
+        value: http://builder-admin:10000
+      - key: EXPORT_SERVICE_URL
+        value: http://builder-export:10000
       - key: INTERNAL_API_KEY
         generateValue: true
       - key: MASTER_KEY
+        sync: false
+      - key: STRIPE_PAYMENT_URL
         sync: false
       - key: PYTHON_VERSION
         value: 3.11.7
@@ -61,8 +53,6 @@ services:
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: GEMINI_API_KEY
-        sync: false
-      - key: OPENAI_API_KEY
         sync: false
 
   # ── 3. THE SECURITY GUARD (Auth) ─────────────────────────────────────────
@@ -99,10 +89,7 @@ services:
           name: builder-ui
           envVarKey: INTERNAL_API_KEY
       - key: AUTH_SERVICE_URL
-        fromService:
-          type: web
-          name: builder-auth
-          envVarKey: RENDER_INTERNAL_HOSTNAME
+        value: http://builder-auth:10000
       - key: STRIPE_SECRET_KEY
         sync: false
       - key: STRIPE_WEBHOOK_SEC
@@ -151,15 +138,11 @@ services:
           name: builder-db
           property: connectionString
       - key: AUTH_SERVICE_URL
-        fromService:
-          type: web
-          name: builder-auth
-          envVarKey: RENDER_INTERNAL_HOSTNAME
+        value: http://builder-auth:10000
       - key: AI_SERVICE_URL
-        fromService:
-          type: web
-          name: builder-ai
-          envVarKey: RENDER_INTERNAL_HOSTNAME
+        value: http://builder-ai:10000
+      - key: ANALYTICS_SERVICE_URL
+        value: http://builder-analytics:10000
 
   # ── 7. THE PRINT SHOP (Export) ────────────────────────────────────────────
   - type: web
