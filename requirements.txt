@@ -1,22 +1,17 @@
-# Web Frameworks
-streamlit
-fastapi
-uvicorn
+# requirements-services.txt
+# Used by: ai_service, auth_service, billing_service,
+#          analytics_service, admin_service, export_service
 
-# HTTP & API Communications
-requests
+fastapi
+uvicorn[standard]
 httpx
 stripe
-
-# Data & Security
+PyJWT
+psycopg2-binary
 pydantic
 pydantic-settings
 python-dotenv
-cryptography
-PyJWT
-
-# Database
-psycopg2-binary
-
-# Styling & UI Components
-st-theme
+anthropic
+google-generativeai
+openai
+reportlab
