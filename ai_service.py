@@ -12,6 +12,7 @@ Every build is saved to PostgreSQL.
 
 import os
 import asyncio
+import secrets
 import psycopg2
 import psycopg2.pool
 import httpx
@@ -33,6 +34,13 @@ DATABASE_URL      = os.getenv("DATABASE_URL")
 XAI_API_KEY       = os.getenv("XAI_API_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 GEMINI_API_KEY    = os.getenv("GEMINI_API_KEY")
+
+# ── Security (timing-safe comparison) ────────────────────────────────────────
+def verify_key(provided: str) -> bool:
+    """Constant-time comparison to prevent timing attacks on API key."""
+    if not provided or not INTERNAL_API_KEY:
+        return False
+    return secrets.compare_digest(provided, INTERNAL_API_KEY)
 
 # Configure AI clients — use ASYNC clients so we don't block the event loop
 genai.configure(api_key=GEMINI_API_KEY)
@@ -267,7 +275,7 @@ async def generate_blueprint(
     req: BuildRequest,
     x_internal_key: str = Header(None)
 ):
-    if x_internal_key != INTERNAL_API_KEY:
+    if not verify_key(x_internal_key):
         raise HTTPException(status_code=403, detail="Invalid Security Badge")
 
     # ── THE ROUND TABLE ──
@@ -301,7 +309,7 @@ async def generate_blueprint(
 
 @app.get("/builds")
 async def get_all_builds(x_internal_key: str = Header(None)):
-    if x_internal_key != INTERNAL_API_KEY:
+    if not verify_key(x_internal_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
 
     conn = get_conn()
@@ -322,7 +330,7 @@ async def get_all_builds(x_internal_key: str = Header(None)):
 
 @app.get("/builds/{build_id}")
 async def get_build(build_id: int, x_internal_key: str = Header(None)):
-    if x_internal_key != INTERNAL_API_KEY:
+    if not verify_key(x_internal_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
 
     conn = get_conn()
