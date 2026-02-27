@@ -14,6 +14,7 @@ Endpoints:
 """
 
 import os
+import secrets
 import psycopg2
 import httpx
 import logging
@@ -55,7 +56,11 @@ def get_db():
         conn.close()
 
 async def verify_master(x_master_key: str = Header(None)):
-    if x_master_key != MASTER_KEY and x_master_key != INTERNAL_API_KEY:
+    # SECURITY FIX 2.1 + 2.2:
+    # - Constant-time comparison (prevents timing attacks)
+    # - ONLY accepts MASTER_KEY (removes INTERNAL_API_KEY privilege escalation)
+    if not x_master_key or not MASTER_KEY or \
+       not secrets.compare_digest(x_master_key, MASTER_KEY):
         raise HTTPException(status_code=403, detail="Master key required")
 
 HEADERS = {"X-Internal-Key": INTERNAL_API_KEY}
