@@ -354,6 +354,14 @@ async def create_project(req: CreateProjectRequest, x_internal_key: str = Header
     Runs AI parts analysis to populate tasks and parts automatically."""
     await verify(x_internal_key)
 
+    # ── 2.3: Input validation ──
+    if len(req.title) > 500:
+        raise HTTPException(status_code=400, detail="Project title too long (max 500 chars).")
+    if len(req.junk_desc) > 10000:
+        raise HTTPException(status_code=400, detail="Parts description too long (max 10,000 chars).")
+    if len(req.blueprint) > 50000:
+        raise HTTPException(status_code=400, detail="Blueprint too long (max 50,000 chars).")
+
     log.info(f"Creating project: {req.title} for {req.user_email}")
 
     # Run AI analysis on the junk description
@@ -745,6 +753,10 @@ async def add_note(project_id: int, req: AddNoteRequest,
                    x_internal_key: str = Header(None)):
     await verify(x_internal_key)
 
+    # ── 2.3: Input validation ──
+    if len(req.content) > 10000:
+        raise HTTPException(status_code=400, detail="Note too long (max 10,000 chars).")
+
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -767,6 +779,10 @@ async def add_note(project_id: int, req: AddNoteRequest,
 async def analyze_parts(req: AnalyzePartsRequest, x_internal_key: str = Header(None)):
     """Standalone parts intelligence — analyze junk without creating a project."""
     await verify(x_internal_key)
+
+    # ── 2.3: Input validation ──
+    if len(req.junk_desc) > 5000:
+        raise HTTPException(status_code=400, detail="Parts description too long (max 5,000 chars).")
 
     analysis = await ai_analyze_parts(req.junk_desc, req.project_type)
     return {"analysis": analysis}
@@ -1106,6 +1122,10 @@ async def scan_uploaded_image(
     Accepts JPEG, PNG, WebP. Max ~20MB (Gemini limit)."""
     await verify(x_internal_key)
 
+    # ── 2.3: Input validation ──
+    if context and len(context) > 2000:
+        raise HTTPException(status_code=400, detail="Context too long (max 2,000 chars).")
+
     allowed = {"image/jpeg", "image/png", "image/webp", "image/jpg"}
     content_type = file.content_type or "image/jpeg"
     if content_type not in allowed:
@@ -1114,7 +1134,7 @@ async def scan_uploaded_image(
 
     image_bytes = await file.read()
     if len(image_bytes) > 20 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Image too large. Max 20MB.")
+        raise HTTPException(status_code=413, detail="Image too large. Max 20MB.")
     if len(image_bytes) < 1000:
         raise HTTPException(status_code=400, detail="Image too small or corrupt.")
 
@@ -1153,6 +1173,16 @@ async def scan_base64_image(req: ScanImageRequest, x_internal_key: str = Header(
     """Scan an image provided as base64 string (for Streamlit integration)."""
     await verify(x_internal_key)
 
+    # ── 2.3: Input validation ──
+    if req.context and len(req.context) > 2000:
+        raise HTTPException(status_code=400, detail="Context too long (max 2,000 chars).")
+
+    # ── 2.4: Base64 bomb protection ──
+    # Check raw base64 string length BEFORE decoding (saves CPU/memory)
+    # 28MB base64 ≈ 20MB decoded — anything over this is abuse
+    MAX_B64_LENGTH = 28 * 1024 * 1024
+    MAX_DECODED_SIZE = 20 * 1024 * 1024  # 20MB
+
     # Strip data URI prefix if present
     b64 = req.image_base64
     mime_type = "image/jpeg"
@@ -1163,10 +1193,16 @@ async def scan_base64_image(req: ScanImageRequest, x_internal_key: str = Header(
             mime_type = match.group(1)
             b64 = match.group(2)
 
+    if len(b64) > MAX_B64_LENGTH:
+        raise HTTPException(status_code=413, detail=f"Image too large (max {MAX_DECODED_SIZE // (1024*1024)}MB).")
+
     try:
         image_bytes = base64.b64decode(b64)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid base64 image data")
+
+    if len(image_bytes) > MAX_DECODED_SIZE:
+        raise HTTPException(status_code=413, detail=f"Image too large ({len(image_bytes) // (1024*1024)}MB, max {MAX_DECODED_SIZE // (1024*1024)}MB).")
 
     if len(image_bytes) < 1000:
         raise HTTPException(status_code=400, detail="Image too small or corrupt.")
