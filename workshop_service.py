@@ -36,6 +36,7 @@ import json
 import secrets
 import asyncio
 import logging
+import time
 import psycopg2
 import psycopg2.pool
 import google.generativeai as genai
@@ -43,6 +44,7 @@ from fastapi import FastAPI, Header, HTTPException, File, UploadFile, Form
 from pydantic import BaseModel
 from typing import Optional, List
 from contextlib import contextmanager
+from collections import defaultdict
 from datetime import datetime
 from dotenv import load_dotenv
 import base64
@@ -54,6 +56,27 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [WORKSHOP] %(levelna
 log = logging.getLogger("workshop")
 
 app = FastAPI()
+
+# ── 1.2: In-Memory Rate Limiter ──────────────────────────────────────────────
+class RateLimiter:
+    """Simple sliding-window rate limiter."""
+    def __init__(self, max_requests: int, window_seconds: int):
+        self.max_requests = max_requests
+        self.window = window_seconds
+        self._hits = defaultdict(list)
+
+    def check(self, key: str) -> bool:
+        now = time.time()
+        self._hits[key] = [t for t in self._hits[key] if now - t < self.window]
+        if len(self._hits[key]) >= self.max_requests:
+            return False
+        self._hits[key].append(now)
+        return True
+
+# Scans: 5 per 5 minutes per user (Gemini Vision calls)
+scan_limiter = RateLimiter(max_requests=5, window_seconds=300)
+# Project creation: 10 per 5 minutes per user
+project_limiter = RateLimiter(max_requests=10, window_seconds=300)
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
@@ -623,7 +646,11 @@ async def advance_phase(project_id: int, req: AdvancePhaseRequest,
                 raise HTTPException(status_code=404, detail="Project not found")
 
             current = row[0]
-            idx = PHASE_KEYS.index(current) if current in PHASE_KEYS else 0
+            # ── 3.6: Reject invalid phase values instead of silently defaulting to 0 ──
+            if current not in PHASE_KEYS:
+                raise HTTPException(status_code=500,
+                    detail=f"Project has invalid phase '{current}'. Contact admin.")
+            idx = PHASE_KEYS.index(current)
 
             if idx >= len(PHASE_KEYS) - 1:
                 raise HTTPException(status_code=400, detail="Project already complete")
@@ -1122,6 +1149,12 @@ async def scan_uploaded_image(
     Accepts JPEG, PNG, WebP. Max ~20MB (Gemini limit)."""
     await verify(x_internal_key)
 
+    # ── 1.2: Rate limiting (Gemini Vision calls are expensive) ──
+    if not scan_limiter.check(user_email):
+        log.warning(f"Rate limited: {user_email} on /scan/upload")
+        raise HTTPException(status_code=429,
+            detail="Too many scans — try again in a few minutes.")
+
     # ── 2.3: Input validation ──
     if context and len(context) > 2000:
         raise HTTPException(status_code=400, detail="Context too long (max 2,000 chars).")
@@ -1172,6 +1205,13 @@ async def scan_uploaded_image(
 async def scan_base64_image(req: ScanImageRequest, x_internal_key: str = Header(None)):
     """Scan an image provided as base64 string (for Streamlit integration)."""
     await verify(x_internal_key)
+
+    # ── 1.2: Rate limiting (Gemini Vision calls are expensive) ──
+    rate_key = req.user_email or "anonymous"
+    if not scan_limiter.check(rate_key):
+        log.warning(f"Rate limited: {rate_key} on /scan/base64")
+        raise HTTPException(status_code=429,
+            detail="Too many scans — try again in a few minutes.")
 
     # ── 2.3: Input validation ──
     if req.context and len(req.context) > 2000:
