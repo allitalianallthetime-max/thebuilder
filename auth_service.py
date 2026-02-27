@@ -139,8 +139,9 @@ async def verify_license(
 ):
     await verify_internal(x_internal_key)
 
-    conn = get_conn()
+    conn = None
     try:
+        conn = get_conn()
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT status, expires_at, tier, email, name FROM licenses WHERE license_key = %s",
@@ -148,7 +149,8 @@ async def verify_license(
             )
             result = cur.fetchone()
     finally:
-        put_conn(conn)
+        if conn:
+            put_conn(conn)
 
     if not result:
         raise HTTPException(status_code=404, detail="License not found")
@@ -158,7 +160,7 @@ async def verify_license(
     if status != "active":
         raise HTTPException(status_code=403, detail="License is inactive")
 
-    if expires_at < datetime.datetime.now():
+    if expires_at < datetime.datetime.utcnow():
         raise HTTPException(status_code=403, detail="License expired")
 
     # NOTE: We do NOT increment build_count here.
@@ -187,8 +189,9 @@ async def create_license(
     license_key = generate_license_key()
     expires_at  = datetime.datetime.utcnow() + datetime.timedelta(days=req.days)
 
-    conn = get_conn()
+    conn = None
     try:
+        conn = get_conn()
         with conn.cursor() as cur:
             cur.execute("""
                 INSERT INTO licenses
@@ -212,11 +215,13 @@ async def create_license(
         }
 
     except Exception as e:
-        conn.rollback()
+        if conn:
+            conn.rollback()
         log.error(f"License creation failed: {e}")
-        raise HTTPException(status_code=500, detail=f"License creation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="License creation failed. Please try again.")
     finally:
-        put_conn(conn)
+        if conn:
+            put_conn(conn)
 
 @app.post("/notify/queue")
 async def queue_notification(
