@@ -344,6 +344,14 @@ async def generate_blueprint(
     if not verify_key(x_internal_key):
         raise HTTPException(status_code=403, detail="Invalid Security Badge")
 
+    # ── 2.3: INPUT VALIDATION ──
+    if len(req.junk_desc) > 5000:
+        raise HTTPException(status_code=400, detail="Parts description too long (max 5,000 characters).")
+    if len(req.project_type) > 200:
+        raise HTTPException(status_code=400, detail="Project type too long (max 200 characters).")
+    if not req.junk_desc.strip():
+        raise HTTPException(status_code=400, detail="Parts description cannot be empty.")
+
     # ── BUILD LIMIT CHECK ──
     # Queries the licenses table directly (can't be spoofed from UI)
     # Runs in thread since it uses synchronous psycopg2
