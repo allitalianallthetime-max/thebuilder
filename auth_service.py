@@ -96,7 +96,8 @@ except Exception as e:
 
 # ── Security ──────────────────────────────────────────────────────────────────
 async def verify_internal(x_internal_key: str = Header(None)):
-    if x_internal_key != INTERNAL_API_KEY:
+    if not x_internal_key or not INTERNAL_API_KEY or \
+       not secrets.compare_digest(x_internal_key, INTERNAL_API_KEY):
         raise HTTPException(status_code=403, detail="Invalid internal key")
 
 def generate_license_key() -> str:
