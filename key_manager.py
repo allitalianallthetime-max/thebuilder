@@ -89,7 +89,7 @@ def cmd_verify(args):
         return
 
     status, tier, email, name, expires_at, build_count = row
-    expired = expires_at < datetime.now()
+    expired = expires_at < datetime.utcnow()
 
     print(f"\n{'='*60}")
     print(f"  LICENSE: {args.key}")
