@@ -265,6 +265,7 @@ _DEFAULTS = {
     "user_tier":        "guest",
     "user_name":        "",
     "user_email":       "",
+    "user_token":       "",       # 1.5: JWT token from auth service (was issued but never stored)
     "is_admin":         False,
     "last_blueprint":   None,
     "last_build_id":    None,
@@ -287,7 +288,13 @@ def esc(text) -> str:
     return html_lib.escape(str(text))
 
 def api_headers():
-    return {"x-internal-key": INTERNAL_API_KEY}
+    """Build headers for service-to-service calls, including JWT when available."""
+    headers = {"x-internal-key": INTERNAL_API_KEY}
+    # 1.5: Forward JWT token so services can verify user identity
+    token = st.session_state.get("user_token", "")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
 
 def sec_head(num: str, title: str):
     safe_html(f"""
@@ -513,6 +520,7 @@ def login():
                         st.session_state.user_tier     = data.get("tier", "pro")
                         st.session_state.user_name     = data.get("name", "Builder")
                         st.session_state.user_email    = data.get("email", "")
+                        st.session_state.user_token    = data.get("token", "")  # 1.5: Store JWT
                         st.rerun()
                     else:
                         st.error("⛔  ACCESS DENIED — KEY NOT RECOGNIZED")
@@ -1335,8 +1343,13 @@ def tab_scanner():
                 <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:#442200;">
                     No scans yet. Upload a photo to start.
                 </div>""")
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning(f"Scan history unavailable: {e}")
+        safe_html("""
+        <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:#442200;
+            border:1px solid #1a0a00;border-left:3px solid #442200;padding:14px 20px;">
+            SCAN HISTORY OFFLINE — Workshop service is syncing.
+        </div>""")
 
 
 # ════════════════════════════════════════════════════════════
