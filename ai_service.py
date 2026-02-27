@@ -104,6 +104,64 @@ DETAIL_PROMPTS = {
     "Master Build (Expert Only)":   "Only provide the MASTER TIER — full integration, advanced techniques, Python control.",
 }
 
+# ── Tier Build Limits (per 30-day rolling window) ────────────────────────────
+# Must match billing_service.py PLANS
+TIER_LIMITS = {
+    "starter": 25,
+    "pro":     100,
+    "master":  999,
+}
+
+# ── Build Limit Enforcement ──────────────────────────────────────────────────
+def check_build_limits(user_email: str) -> dict:
+    """Check if a user has builds remaining in their current billing cycle.
+
+    Returns dict with: allowed, tier, used, limit, remaining, (reason if denied)
+    Queries the licenses table directly — can't be spoofed from the UI.
+    """
+    # Admin/master key users bypass limits
+    if user_email in ("admin", "anonymous"):
+        return {"allowed": True, "tier": "master", "used": 0, "limit": 999, "remaining": 999}
+
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            # Look up the user's active license tier
+            cur.execute("""
+                SELECT tier, status, expires_at FROM licenses
+                WHERE email = %s AND status = 'active'
+                ORDER BY created_at DESC LIMIT 1
+            """, (user_email,))
+            lic = cur.fetchone()
+
+            if not lic:
+                return {"allowed": False, "tier": "none", "used": 0, "limit": 0, "remaining": 0,
+                        "reason": "No active license found for this account."}
+
+            tier, status, expires_at = lic
+
+            if expires_at < datetime.utcnow():
+                return {"allowed": False, "tier": tier, "used": 0, "limit": 0, "remaining": 0,
+                        "reason": "License expired. Renew to continue forging."}
+
+            # Count builds in the last 30 days
+            cur.execute("""
+                SELECT COUNT(*) FROM builds
+                WHERE user_email = %s AND created_at > NOW() - INTERVAL '30 days'
+            """, (user_email,))
+            used = cur.fetchone()[0]
+
+            limit = TIER_LIMITS.get(tier, 25)
+            remaining = max(0, limit - used)
+
+            if used >= limit:
+                return {"allowed": False, "tier": tier, "used": used, "limit": limit, "remaining": 0,
+                        "reason": f"{tier.upper()} tier limit reached ({used}/{limit} builds). Upgrade to unlock more."}
+
+            return {"allowed": True, "tier": tier, "used": used, "limit": limit, "remaining": remaining}
+    finally:
+        put_conn(conn)
+
 # ── THE SHOP FOREMAN (Grok) ───────────────────────────────────────────────────
 async def get_grok_response(junk_desc: str, project_type: str) -> str:
     """Grok: Raw mechanical logic, grease-under-the-fingernails engineering."""
@@ -260,6 +318,14 @@ def save_build(
                 RETURNING id
             """, (user_email, junk_desc, project_type, blueprint, grok_notes, claude_notes, datetime.utcnow()))
             build_id = cur.fetchone()[0]
+
+            # ── Bug Fix 3.1: Increment build_count on the user's license ──
+            if user_email not in ("admin", "anonymous"):
+                cur.execute("""
+                    UPDATE licenses SET build_count = build_count + 1
+                    WHERE email = %s AND status = 'active'
+                """, (user_email,))
+
             conn.commit()
             return build_id
     except Exception as e:
@@ -277,6 +343,16 @@ async def generate_blueprint(
 ):
     if not verify_key(x_internal_key):
         raise HTTPException(status_code=403, detail="Invalid Security Badge")
+
+    # ── BUILD LIMIT CHECK ──
+    # Queries the licenses table directly (can't be spoofed from UI)
+    # Runs in thread since it uses synchronous psycopg2
+    limits = await asyncio.to_thread(check_build_limits, req.user_email)
+    if not limits["allowed"]:
+        raise HTTPException(
+            status_code=429,
+            detail=limits.get("reason", "Build limit reached. Upgrade your plan.")
+        )
 
     # ── THE ROUND TABLE ──
     # Step 1: Shop Foreman analyzes the parts
@@ -304,21 +380,34 @@ async def generate_blueprint(
             "foreman": grok_notes,
             "engineer": claude_notes,
             "contractor": final_blueprint
+        },
+        "usage": {
+            "tier":       limits["tier"],
+            "used":       limits["used"] + 1,
+            "limit":      limits["limit"],
+            "remaining":  max(0, limits["remaining"] - 1)
         }
     }
 
 @app.get("/builds")
-async def get_all_builds(x_internal_key: str = Header(None)):
+async def get_all_builds(x_internal_key: str = Header(None), user_email: str = None):
     if not verify_key(x_internal_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
 
     conn = get_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute("""
-                SELECT id, user_email, project_type, junk_desc, created_at
-                FROM builds ORDER BY created_at DESC LIMIT 100
-            """)
+            if user_email:
+                cur.execute("""
+                    SELECT id, user_email, project_type, junk_desc, created_at
+                    FROM builds WHERE user_email = %s
+                    ORDER BY created_at DESC LIMIT 100
+                """, (user_email,))
+            else:
+                cur.execute("""
+                    SELECT id, user_email, project_type, junk_desc, created_at
+                    FROM builds ORDER BY created_at DESC LIMIT 100
+                """)
             rows = cur.fetchall()
     finally:
         put_conn(conn)
