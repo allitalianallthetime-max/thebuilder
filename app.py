@@ -258,6 +258,7 @@ _DEFAULTS = {
     "last_build_id":    None,
     "last_project_type": None,
     "last_junk_input":  None,
+    "last_usage":       None,
 }
 
 for _key, _val in _DEFAULTS.items():
@@ -678,7 +679,22 @@ def tab_new_build():
                         st.session_state.last_build_id     = data.get("build_id")
                         st.session_state.last_project_type = project_type
                         st.session_state.last_junk_input   = junk_input
+                        st.session_state.last_usage        = data.get("usage")
                         st.rerun()
+                    elif resp.status_code == 429:
+                        detail = "Build limit reached."
+                        try:
+                            detail = resp.json().get("detail", detail)
+                        except Exception:
+                            pass
+                        st.error(f"⛔  {detail}")
+                        safe_html("""
+                        <div style="border:1px solid #ff4444;border-left:3px solid #ff4444;
+                            padding:14px 20px;margin-top:8px;
+                            font-family:'Share Tech Mono',monospace;font-size:10px;color:#ff8888;">
+                            🔒 Your current tier has hit its monthly build limit.<br>
+                            <span style='color:#ff6600;'>Upgrade your plan to unlock more builds.</span>
+                        </div>""")
                     else:
                         st.error(f"⛔  FORGE ERROR: {resp.status_code} — {resp.text[:200]}")
                 except Exception as e:
@@ -691,6 +707,31 @@ def tab_new_build():
             ⚙ BLUEPRINT FORGED — ROUND TABLE CONSENSUS REACHED
             &nbsp;·&nbsp; BUILD #{st.session_state.last_build_id or '—'}
         </div>""")
+
+        # ── USAGE METER ──
+        usage = st.session_state.get("last_usage")
+        if usage and usage.get("limit"):
+            u_used  = usage["used"]
+            u_limit = usage["limit"]
+            u_tier  = usage.get("tier", "").upper()
+            u_pct   = min(100, round(u_used / u_limit * 100))
+            bar_color = "#00cc66" if u_pct < 75 else ("#ffaa00" if u_pct < 95 else "#ff4444")
+            safe_html(f"""
+            <div style="background:#0c0c0c;border:1px solid #1a1a1a;padding:10px 16px;margin-bottom:16px;
+                display:flex;align-items:center;gap:16px;">
+                <div style="font-family:'Share Tech Mono',monospace;font-size:8px;color:#442200;
+                    letter-spacing:2px;white-space:nowrap;">
+                    {u_tier} TIER &middot; {u_used}/{u_limit} BUILDS
+                </div>
+                <div style="flex:1;height:6px;background:#1a1a1a;position:relative;border-radius:1px;">
+                    <div style="position:absolute;left:0;top:0;bottom:0;width:{u_pct}%;
+                        background:{bar_color};border-radius:1px;transition:width .3s;"></div>
+                </div>
+                <div style="font-family:'Share Tech Mono',monospace;font-size:8px;color:{bar_color};
+                    letter-spacing:1px;white-space:nowrap;">
+                    {usage.get('remaining', 0)} LEFT
+                </div>
+            </div>""")
 
         st.markdown(st.session_state.last_blueprint)
 
@@ -803,7 +844,11 @@ def tab_history():
     sec_head("02", "BLUEPRINT HISTORY")
 
     try:
-        resp = httpx.get(f"{AI_SERVICE_URL}/builds", headers=api_headers(), timeout=10.0)
+        # ── 1.4: User data isolation — non-admins only see their own builds ──
+        params = {}
+        if not st.session_state.is_admin and st.session_state.user_email:
+            params["user_email"] = st.session_state.user_email
+        resp = httpx.get(f"{AI_SERVICE_URL}/builds", params=params, headers=api_headers(), timeout=10.0)
         if resp.status_code == 200:
             builds = resp.json()
 
@@ -1244,7 +1289,12 @@ def tab_scanner():
     sec_head("", "SCAN HISTORY")
 
     try:
+        # ── 1.4: User data isolation — non-admins only see their own scans ──
+        scan_params = {}
+        if not st.session_state.is_admin and st.session_state.user_email:
+            scan_params["user_email"] = st.session_state.user_email
         resp = httpx.get(f"{WORKSHOP_SERVICE_URL}/scans",
+                         params=scan_params,
                          headers=api_headers(), timeout=10.0)
         if resp.status_code == 200:
             scans = resp.json()
@@ -1297,8 +1347,13 @@ def tab_workshop():
     # ── PROJECT LIST VIEW ──
     if st.session_state.ws_view == "list":
         try:
+            # ── 1.4: User data isolation — non-admins only see their own projects ──
+            ws_params = {}
+            if not st.session_state.is_admin and st.session_state.user_email:
+                ws_params["user_email"] = st.session_state.user_email
             resp = httpx.get(
                 f"{WORKSHOP_SERVICE_URL}/projects",
+                params=ws_params,
                 headers=api_headers(), timeout=10.0
             )
             if resp.status_code == 200:
