@@ -92,6 +92,16 @@ async def provision_license(session: dict):
 
     async with httpx.AsyncClient(timeout=15, headers=HEADERS) as client:
         try:
+            # ── 1.9: Idempotency check — prevent duplicate licenses from webhook replays ──
+            check_resp = await client.get(
+                f"{AUTH_SERVICE_URL}/auth/check-session/{session_id}"
+            )
+            if check_resp.status_code == 200 and check_resp.json().get("provisioned"):
+                existing = check_resp.json()
+                log.warning(f"⚠️ License already provisioned for session {session_id}: "
+                           f"{existing['license_key']} → {existing['email']}. Skipping.")
+                return
+
             # 1. Create the license
             auth_resp = await client.post(
                 f"{AUTH_SERVICE_URL}/auth/create",
@@ -135,7 +145,45 @@ async def handle_subscription_cancelled(subscription: dict):
     """Deactivate license when subscription is cancelled."""
     customer_id = subscription.get("customer")
     log.info(f"Subscription cancelled for customer: {customer_id}")
-    # Future: query license by stripe_customer_id and deactivate
+
+    if not customer_id:
+        log.error("Subscription cancelled event has no customer ID")
+        return
+
+    async with httpx.AsyncClient(timeout=15, headers=HEADERS) as client:
+        try:
+            resp = await client.post(
+                f"{AUTH_SERVICE_URL}/auth/deactivate-by-customer",
+                json={
+                    "stripe_customer_id": customer_id,
+                    "reason": f"Stripe subscription cancelled: {subscription.get('id', 'unknown')}"
+                }
+            )
+            resp.raise_for_status()
+            result = resp.json()
+            deactivated = result.get("deactivated", 0)
+
+            if deactivated > 0:
+                log.info(f"✅ Deactivated {deactivated} license(s) for customer {customer_id}")
+                # Queue cancellation emails
+                for lic in result.get("licenses", []):
+                    try:
+                        await client.post(
+                            f"{AUTH_SERVICE_URL}/notify/queue",
+                            json={
+                                "type": "subscription_cancelled",
+                                "to":   lic["email"],
+                                "name": "Builder",
+                                "payload": {"app_url": APP_URL}
+                            }
+                        )
+                    except Exception:
+                        pass
+            else:
+                log.warning(f"No active licenses found for customer {customer_id}")
+
+        except Exception as e:
+            log.error(f"Failed to deactivate licenses for customer {customer_id}: {e}")
 
 async def handle_payment_failed(invoice: dict):
     """Queue payment failed notification."""
