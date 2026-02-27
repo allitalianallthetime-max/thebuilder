@@ -14,15 +14,17 @@ import os
 import asyncio
 import secrets
 import logging
+import time
 import psycopg2
 import psycopg2.pool
 import httpx
 import anthropic
 import google.generativeai as genai
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
+from collections import defaultdict
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -31,6 +33,34 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [AI] %(levelname)s %
 log = logging.getLogger("ai")
 
 app = FastAPI()
+
+# ── 1.2: In-Memory Rate Limiter ──────────────────────────────────────────────
+class RateLimiter:
+    """Simple sliding-window rate limiter. Keyed by IP or email."""
+    def __init__(self, max_requests: int, window_seconds: int):
+        self.max_requests = max_requests
+        self.window = window_seconds
+        self._hits = defaultdict(list)  # key -> [timestamps]
+
+    def check(self, key: str) -> bool:
+        """Returns True if request is allowed, False if rate limited."""
+        now = time.time()
+        # Prune old entries
+        self._hits[key] = [t for t in self._hits[key] if now - t < self.window]
+        if len(self._hits[key]) >= self.max_requests:
+            return False
+        self._hits[key].append(now)
+        return True
+
+    def remaining(self, key: str) -> int:
+        now = time.time()
+        self._hits[key] = [t for t in self._hits[key] if now - t < self.window]
+        return max(0, self.max_requests - len(self._hits[key]))
+
+# /generate: 10 builds per 5 minutes per user (3 AI calls per build = $$$)
+generate_limiter = RateLimiter(max_requests=10, window_seconds=300)
+# /builds: 30 reads per minute per user
+builds_limiter = RateLimiter(max_requests=30, window_seconds=60)
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 INTERNAL_API_KEY  = os.getenv("INTERNAL_API_KEY")
@@ -350,6 +380,14 @@ async def generate_blueprint(
 ):
     if not verify_key(x_internal_key):
         raise HTTPException(status_code=403, detail="Invalid Security Badge")
+
+    # ── 1.2: RATE LIMITING ──
+    rate_key = req.user_email or "anonymous"
+    if not generate_limiter.check(rate_key):
+        remaining = generate_limiter.remaining(rate_key)
+        log.warning(f"Rate limited: {rate_key} on /generate")
+        raise HTTPException(status_code=429,
+            detail="Too many builds — slow down, Engineer. Try again in a few minutes.")
 
     # ── 2.3: INPUT VALIDATION ──
     if len(req.junk_desc) > 5000:
