@@ -311,6 +311,64 @@ async def delete_license_history(license_key: str, x_internal_key: str = Header(
 
     return {"status": "deleted", "license_key": license_key}
 
+# ── 1.6: Subscription Cancellation ───────────────────────────────────────────
+class DeactivateByCustomerRequest(BaseModel):
+    stripe_customer_id: str
+    reason: str = "Subscription cancelled"
+
+@app.post("/auth/deactivate-by-customer")
+async def deactivate_by_customer(
+    req: DeactivateByCustomerRequest,
+    x_internal_key: str = Header(None)
+):
+    """Deactivate all licenses for a Stripe customer (subscription cancelled)."""
+    await verify_internal(x_internal_key)
+
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE licenses SET status = 'cancelled', notes = %s
+                WHERE stripe_customer_id = %s AND status = 'active'
+                RETURNING license_key, email
+            """, (req.reason, req.stripe_customer_id))
+            rows = cur.fetchall()
+            conn.commit()
+    finally:
+        put_conn(conn)
+
+    if rows:
+        log.info(f"Deactivated {len(rows)} license(s) for Stripe customer {req.stripe_customer_id}")
+    else:
+        log.warning(f"No active licenses found for Stripe customer {req.stripe_customer_id}")
+
+    return {
+        "deactivated": len(rows),
+        "licenses": [{"key": r[0], "email": r[1]} for r in rows]
+    }
+
+# ── 1.9: Idempotency Check (Webhook Replay Protection) ──────────────────────
+@app.get("/auth/check-session/{session_id}")
+async def check_session_provisioned(session_id: str, x_internal_key: str = Header(None)):
+    """Check if a license was already provisioned for a Stripe session.
+    Prevents duplicate licenses from webhook replays."""
+    await verify_internal(x_internal_key)
+
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT license_key, email, tier FROM licenses
+                WHERE notes LIKE %s LIMIT 1
+            """, (f"%{session_id}%",))
+            row = cur.fetchone()
+    finally:
+        put_conn(conn)
+
+    if row:
+        return {"provisioned": True, "license_key": row[0], "email": row[1], "tier": row[2]}
+    return {"provisioned": False}
+
 @app.get("/notify/pending")
 async def get_pending_notifications(x_internal_key: str = Header(None)):
     """Called by scheduler to get pending emails."""
