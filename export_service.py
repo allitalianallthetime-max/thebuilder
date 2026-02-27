@@ -50,6 +50,10 @@ async def health():
 async def export_pdf(req: ExportRequest, x_internal_key: str = Header(None)):
     await verify(x_internal_key)
 
+    # ── 2.3: Input validation ──
+    if len(req.blueprint) > 100000:
+        raise HTTPException(status_code=400, detail="Blueprint too large to export (max 100,000 chars).")
+
     try:
         from reportlab.lib.pagesizes import letter
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -172,6 +176,10 @@ async def export_pdf(req: ExportRequest, x_internal_key: str = Header(None)):
 @app.post("/export/text")
 async def export_text(req: ExportRequest, x_internal_key: str = Header(None)):
     await verify(x_internal_key)
+
+    # ── 2.3: Input validation ──
+    if len(req.blueprint) > 100000:
+        raise HTTPException(status_code=400, detail="Blueprint too large to export (max 100,000 chars).")
 
     content = f"""
 ================================================================================
