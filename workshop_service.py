@@ -33,6 +33,7 @@ Endpoints:
 
 import os
 import json
+import secrets
 import asyncio
 import logging
 import psycopg2
@@ -223,7 +224,8 @@ except Exception as e:
 
 # ── Security ──────────────────────────────────────────────────────────────────
 async def verify(x_internal_key: str = Header(None)):
-    if x_internal_key != INTERNAL_API_KEY:
+    if not x_internal_key or not INTERNAL_API_KEY or \
+       not secrets.compare_digest(x_internal_key, INTERNAL_API_KEY):
         raise HTTPException(status_code=403, detail="Unauthorized")
 
 # ── Request Models ────────────────────────────────────────────────────────────
