@@ -15,6 +15,7 @@ Endpoints:
 import os
 import secrets
 import psycopg2
+import psycopg2.pool
 import logging
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
@@ -34,13 +35,30 @@ app = FastAPI()
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
 DATABASE_URL     = os.getenv("DATABASE_URL")
 
+# ── 2.5: Connection Pool (prevents exhaustion under load) ────────────────────
+db_pool = None
+try:
+    db_pool = psycopg2.pool.ThreadedConnectionPool(1, 10, DATABASE_URL)
+    log.info("Database connection pool created (1-10 connections)")
+except Exception as e:
+    log.error(f"Failed to create connection pool: {e}")
+
 @contextmanager
 def get_db():
-    conn = psycopg2.connect(DATABASE_URL)
+    """Get a connection from the pool, auto-return on exit."""
+    conn = None
     try:
+        if db_pool:
+            conn = db_pool.getconn()
+        else:
+            conn = psycopg2.connect(DATABASE_URL)
         yield conn
     finally:
-        conn.close()
+        if conn:
+            if db_pool:
+                db_pool.putconn(conn)
+            else:
+                conn.close()
 
 def init_db():
     with get_db() as conn:
