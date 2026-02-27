@@ -10,6 +10,7 @@ import streamlit.components.v1 as components
 import os
 import html as html_lib
 import secrets
+import logging
 import httpx
 from dotenv import load_dotenv
 
@@ -48,6 +49,17 @@ def safe_html(content: str, height: int = 0):
     
     # Fallback — works for most HTML, may break on complex blocks in newer versions
     st.markdown(content, unsafe_allow_html=True)
+
+# ── 2.6: Safe Error Display (log internals, show generic message to user) ────
+log = logging.getLogger("builder-ui")
+
+def safe_error(user_msg: str, error: Exception = None, resp=None):
+    """Show a clean error to the user, log the full details server-side."""
+    if error:
+        log.error(f"{user_msg} | Exception: {type(error).__name__}: {error}")
+    if resp:
+        log.error(f"{user_msg} | HTTP {resp.status_code}: {resp.text[:500]}")
+    st.error(f"⛔  {user_msg}")
 
 # ── URL Normalizer ────────────────────────────────────────────────────────────
 # Render's RENDER_INTERNAL_HOSTNAME gives bare hostnames (e.g. "builder-auth").
@@ -505,7 +517,7 @@ def login():
                     else:
                         st.error("⛔  ACCESS DENIED — KEY NOT RECOGNIZED")
                 except Exception as e:
-                    st.error(f"⛔  AUTH SERVICE OFFLINE: {e}")
+                    safe_error("AUTH SERVICE OFFLINE — try again in a moment.", error=e)
 
         safe_html("""
         <div style="text-align:center;padding:12px 0 4px;font-family:'Share Tech Mono',monospace;font-size:8px;color:#2a1500;letter-spacing:2px;">
@@ -696,9 +708,9 @@ def tab_new_build():
                             <span style='color:#ff6600;'>Upgrade your plan to unlock more builds.</span>
                         </div>""")
                     else:
-                        st.error(f"⛔  FORGE ERROR: {resp.status_code} — {resp.text[:200]}")
+                        safe_error(f"FORGE ERROR ({resp.status_code}) — the Round Table encountered an issue.", resp=resp)
                 except Exception as e:
-                    st.error(f"⛔  AI ENGINE OFFLINE: {e}")
+                    safe_error("AI ENGINE OFFLINE — the Round Table is unreachable.", error=e)
 
     # ── BLUEPRINT OUTPUT ──
     if st.session_state.last_blueprint:
@@ -771,7 +783,7 @@ def tab_new_build():
                     else:
                         st.error("PDF export failed")
                 except Exception as e:
-                    st.error(f"Export offline: {e}")
+                    safe_error("Export service offline.", error=e)
 
         with col2:
             if st.button("📝  EXPORT TEXT"):
@@ -796,7 +808,7 @@ def tab_new_build():
                     else:
                         st.error("Text export failed")
                 except Exception as e:
-                    st.error(f"Export offline: {e}")
+                    safe_error("Export service offline.", error=e)
 
         with col3:
             if st.button("🔄  NEW BUILD"):
@@ -834,7 +846,7 @@ def tab_new_build():
                     else:
                         st.error(f"Workshop error: {r.status_code}")
                 except Exception as e:
-                    st.error(f"Workshop offline: {e}")
+                    safe_error("Workshop service offline.", error=e)
 
 
 # ════════════════════════════════════════════════════════════
@@ -1017,9 +1029,9 @@ def tab_scanner():
                         st.session_state.last_scan = resp.json()
                         st.rerun()
                     else:
-                        st.error(f"⛔ Scan failed: {resp.status_code} — {resp.text[:200]}")
+                        safe_error(f"Scan failed ({resp.status_code}) — X-Ray Scanner encountered an issue.", resp=resp)
                 except Exception as e:
-                    st.error(f"⛔ Scanner offline: {e}")
+                    safe_error("Scanner offline — try again in a moment.", error=e)
 
     # ── SCAN RESULTS ──
     scan = st.session_state.get("last_scan")
@@ -1250,7 +1262,7 @@ def tab_scanner():
                     else:
                         st.error("Could not generate workbench text")
                 except Exception as e:
-                    st.error(f"Error: {e}")
+                    safe_error("Something went wrong — try again.", error=e)
 
         with acol2:
             if st.button("🔩  SEND TO WORKSHOP"):
@@ -1277,7 +1289,7 @@ def tab_scanner():
                     else:
                         st.error(f"Workshop error: {r.status_code}")
                 except Exception as e:
-                    st.error(f"Error: {e}")
+                    safe_error("Something went wrong — try again.", error=e)
 
         with acol3:
             if st.button("🔬  NEW SCAN"):
@@ -1459,7 +1471,7 @@ def tab_workshop():
 
             proj = resp.json()
         except Exception as e:
-            st.error(f"Workshop offline: {e}")
+            safe_error("Workshop service offline.", error=e)
             return
 
         # ── Project Header ──
@@ -1545,7 +1557,7 @@ def tab_workshop():
                             else:
                                 st.error(f"Cannot advance: {r.json().get('detail', r.status_code)}")
                         except Exception as e:
-                            st.error(f"Error: {e}")
+                            safe_error("Something went wrong — try again.", error=e)
 
         safe_html("<div style='height:20px'></div>")
 
@@ -1761,7 +1773,7 @@ def tab_admin():
         else:
             st.error(f"Admin service error: {resp.status_code}")
     except Exception as e:
-        st.error(f"Admin offline: {e}")
+        safe_error("Admin service offline.", error=e)
 
 
 # ════════════════════════════════════════════════════════════
