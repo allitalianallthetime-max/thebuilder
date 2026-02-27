@@ -38,7 +38,7 @@ services:
     name: builder-ai
     runtime: python
     plan: starter
-    buildCommand: pip install -r requirements-services.txt
+    buildCommand: pip install -r requirements-service.txt
     startCommand: uvicorn ai_service:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
@@ -64,7 +64,7 @@ services:
     name: builder-auth
     runtime: python
     plan: starter
-    buildCommand: pip install -r requirements-services.txt
+    buildCommand: pip install -r requirements-service.txt
     startCommand: uvicorn auth_service:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
@@ -86,7 +86,7 @@ services:
     name: builder-billing
     runtime: python
     plan: starter
-    buildCommand: pip install -r requirements-services.txt
+    buildCommand: pip install -r requirements-service.txt
     startCommand: uvicorn billing_service:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
@@ -110,7 +110,7 @@ services:
     name: builder-analytics
     runtime: python
     plan: starter
-    buildCommand: pip install -r requirements-services.txt
+    buildCommand: pip install -r requirements-service.txt
     startCommand: uvicorn analytics_service:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
@@ -130,7 +130,7 @@ services:
     name: builder-admin
     runtime: python
     plan: starter
-    buildCommand: pip install -r requirements-services.txt
+    buildCommand: pip install -r requirements-service.txt
     startCommand: uvicorn admin_service:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
@@ -161,7 +161,7 @@ services:
     name: builder-export
     runtime: python
     plan: starter
-    buildCommand: pip install -r requirements-services.txt
+    buildCommand: pip install -r requirements-service.txt
     startCommand: uvicorn export_service:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
@@ -177,7 +177,7 @@ services:
     name: builder-workshop
     runtime: python
     plan: starter
-    buildCommand: pip install -r requirements-services.txt
+    buildCommand: pip install -r requirements-service.txt
     startCommand: uvicorn workshop_service:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
