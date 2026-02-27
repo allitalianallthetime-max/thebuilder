@@ -128,22 +128,90 @@ async def export_pdf(req: ExportRequest, x_internal_key: str = Header(None)):
         story.append(HRFlowable(width="100%", thickness=1, color=HexColor("#333333")))
         story.append(Spacer(1, 12))
 
-        # Blueprint content
+        # Blueprint content — with markdown conversion
         story.append(Paragraph("BLUEPRINT", header_style))
+
+        # ── 3.5: Markdown → PDF conversion ────────────────────────────────────
+        code_style = ParagraphStyle(
+            'Code', parent=body_style,
+            fontName='Courier', fontSize=8, leading=11,
+            textColor=HexColor("#00cc66"),
+            backColor=HexColor("#0a0a0a"),
+            leftIndent=12, rightIndent=12,
+            spaceBefore=4, spaceAfter=4,
+        )
+        bullet_style = ParagraphStyle(
+            'Bullet', parent=body_style,
+            leftIndent=20, bulletIndent=8,
+            spaceBefore=2, spaceAfter=2,
+        )
+
+        in_code_block = False
+        code_buffer = []
+
+        import re
+        def md_inline(text):
+            """Convert inline markdown: **bold**, *italic*, `code`."""
+            text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+            text = re.sub(r'\*(.+?)\*', r'<i>\1</i>', text)
+            text = re.sub(r'`(.+?)`', r'<font face="Courier" size="8" color="#ff6600">\1</font>', text)
+            return text
+
         for line in req.blueprint.split("\n"):
-            line = line.strip()
-            if not line:
+            stripped = line.strip()
+
+            # Code block toggle
+            if stripped.startswith("```"):
+                if in_code_block:
+                    # End code block — flush buffer
+                    code_text = "\n".join(code_buffer)
+                    safe_code = code_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                    story.append(Paragraph(safe_code.replace("\n", "<br/>"), code_style))
+                    code_buffer = []
+                    in_code_block = False
+                else:
+                    in_code_block = True
+                continue
+
+            if in_code_block:
+                code_buffer.append(line)
+                continue
+
+            # Empty line
+            if not stripped:
                 story.append(Spacer(1, 6))
-            elif line.startswith("##"):
-                clean = line.replace("#", "").strip()
-                story.append(Paragraph(clean, header_style))
-            elif line.startswith("#"):
-                clean = line.replace("#", "").strip()
-                story.append(Paragraph(clean, header_style))
+            # Horizontal rule
+            elif stripped in ("---", "***", "___"):
+                story.append(Spacer(1, 4))
+                story.append(HRFlowable(width="100%", thickness=0.5, color=HexColor("#442200")))
+                story.append(Spacer(1, 4))
+            # Headers
+            elif stripped.startswith("###"):
+                clean = stripped.lstrip("#").strip()
+                story.append(Paragraph(md_inline(clean), header_style))
+            elif stripped.startswith("##"):
+                clean = stripped.lstrip("#").strip()
+                story.append(Paragraph(md_inline(clean), header_style))
+            elif stripped.startswith("#"):
+                clean = stripped.lstrip("#").strip()
+                story.append(Paragraph(md_inline(clean), title_style))
+            # Bullet points
+            elif stripped.startswith("- ") or stripped.startswith("* "):
+                content = stripped[2:]
+                story.append(Paragraph(f"• {md_inline(content)}", bullet_style))
+            # Numbered lists
+            elif re.match(r'^\d+\.\s', stripped):
+                story.append(Paragraph(md_inline(stripped), bullet_style))
+            # Regular text
             else:
-                # Escape HTML chars for reportlab
-                safe = line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                story.append(Paragraph(safe, body_style))
+                story.append(Paragraph(md_inline(stripped), body_style))
+
+        # Flush any unclosed code block
+        if code_buffer:
+            code_text = "\n".join(code_buffer)
+            safe_code = code_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            story.append(Paragraph(safe_code.replace("\n", "<br/>"), code_style))
 
         # Footer
         story.append(Spacer(1, 20))
