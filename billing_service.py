@@ -12,6 +12,7 @@ Endpoints:
 """
 
 import os
+import secrets
 import stripe
 import httpx
 import logging
@@ -171,7 +172,8 @@ async def create_checkout(
     x_internal_key: str = Header(None)
 ):
     """Create a Stripe checkout session for the given plan."""
-    if x_internal_key != INTERNAL_API_KEY:
+    if not x_internal_key or not INTERNAL_API_KEY or \
+       not secrets.compare_digest(x_internal_key, INTERNAL_API_KEY):
         raise HTTPException(status_code=403, detail="Unauthorized")
 
     plan = PLANS.get(plan_key)
