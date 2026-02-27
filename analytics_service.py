@@ -13,6 +13,7 @@ Endpoints:
 """
 
 import os
+import secrets
 import psycopg2
 import logging
 from fastapi import FastAPI, Header, HTTPException
@@ -66,7 +67,8 @@ class EventRequest(BaseModel):
     metadata:   dict = {}
 
 async def verify(x_internal_key: str = Header(None)):
-    if x_internal_key != INTERNAL_API_KEY:
+    if not x_internal_key or not INTERNAL_API_KEY or \
+       not secrets.compare_digest(x_internal_key, INTERNAL_API_KEY):
         raise HTTPException(status_code=403, detail="Unauthorized")
 
 @app.get("/health")
