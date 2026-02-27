@@ -16,6 +16,7 @@ Endpoints:
 import os
 import secrets
 import psycopg2
+import psycopg2.pool
 import httpx
 import logging
 from fastapi import FastAPI, Header, HTTPException
@@ -47,13 +48,30 @@ AUTH_SERVICE_URL   = normalize_url(os.getenv("AUTH_SERVICE_URL", ""), "http://bu
 AI_SERVICE_URL     = normalize_url(os.getenv("AI_SERVICE_URL", ""),  "http://builder-ai:10000")
 ANALYTICS_URL      = normalize_url(os.getenv("ANALYTICS_SERVICE_URL", ""), "http://builder-analytics:10000")
 
+# ── 2.5: Connection Pool (prevents exhaustion under load) ────────────────────
+db_pool = None
+try:
+    db_pool = psycopg2.pool.ThreadedConnectionPool(1, 10, DATABASE_URL)
+    log.info("Database connection pool created (1-10 connections)")
+except Exception as e:
+    log.error(f"Failed to create connection pool: {e}")
+
 @contextmanager
 def get_db():
-    conn = psycopg2.connect(DATABASE_URL)
+    """Get a connection from the pool, auto-return on exit."""
+    conn = None
     try:
+        if db_pool:
+            conn = db_pool.getconn()
+        else:
+            conn = psycopg2.connect(DATABASE_URL)
         yield conn
     finally:
-        conn.close()
+        if conn:
+            if db_pool:
+                db_pool.putconn(conn)
+            else:
+                conn.close()
 
 async def verify_master(x_master_key: str = Header(None)):
     # SECURITY FIX 2.1 + 2.2:
