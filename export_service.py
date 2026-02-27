@@ -14,6 +14,7 @@ Endpoints:
 
 import os
 import io
+import secrets
 import logging
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import StreamingResponse
@@ -37,7 +38,8 @@ class ExportRequest(BaseModel):
     user_email:   str = "anonymous"
 
 async def verify(x_internal_key: str):
-    if x_internal_key != INTERNAL_API_KEY:
+    if not x_internal_key or not INTERNAL_API_KEY or \
+       not secrets.compare_digest(x_internal_key, INTERNAL_API_KEY):
         raise HTTPException(status_code=403, detail="Unauthorized")
 
 @app.get("/health")
