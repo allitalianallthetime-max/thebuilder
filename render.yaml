@@ -209,13 +209,12 @@ services:
         sync: false
 
   # ── 12. THE MESSAGE BROKER (Redis) ─────────────────────────────────────────
-  # Notice the dash (-). This tells Render it belongs to the 'services:' list!
   - type: redis
     name: builder-redis
     plan: free
+    ipAllowList: []     # <--- RENDER STRICTLY REQUIRES THIS!
 
 # ── 13. THE STORAGE TANK (Database) ──────────────────────────────────────────
-# Databases ARE a top-level category, so this stays aligned to the far left.
 databases:
   - name: builder-db
     plan: standard
