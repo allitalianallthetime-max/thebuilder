@@ -16,7 +16,6 @@ pydantic-settings
 python-dotenv
 anthropic
 google-generativeai
-openai
 reportlab
 protobuf>=5.29.0
 python-multipart
