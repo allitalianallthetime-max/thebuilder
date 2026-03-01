@@ -1,17 +1,16 @@
 # ==============================================================================
-# AoC3P0 SYSTEMS - ENTERPRISE INFRASTRUCTURE
-# Highly Available, Auto-Scaling Microservices for Maximum Revenue
+# AoC3P0 SYSTEMS - ENTERPRISE INFRASTRUCTURE v3.0
+# Zero-Downtime, Highly Available, Worker-Driven Microservices
 # ==============================================================================
 services:
-  # ── 1. THE DASHBOARD (UI) ──────────────────────────────────────────────────
+  # ── 1. THE FRONTEND (UI) ───────────────────────────────────────────────────
   - type: web
     name: builder-ui
     runtime: python
     plan: starter
     buildCommand: pip install -r requirements-ui.txt
-    # PRO UPGRADE: Added headless mode to prevent memory leaks
     startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
-    healthCheckPath: /healthz # PRO UPGRADE: Guarantees zero-downtime deployments
+    healthCheckPath: /healthz
     envVars:
       - key: AUTH_SERVICE_URL
         value: http://builder-auth:10000
@@ -33,69 +32,35 @@ services:
         sync: false
       - key: STRIPE_PAYMENT_URL
         sync: false
-      - key: PYTHON_VERSION
-        value: 3.11.7
 
-  # ── 2. THE AI TOLLBOOTH (API Gateway) ─────────────────────────────────────
-  # Lightning fast. It takes the request, checks billing, puts the job in Redis, 
-  # and immediately tells the UI "Job Started". No timeouts.
+  # ── 2. THE AI GATEWAY (Tollbooth) ──────────────────────────────────────────
   - type: web
     name: builder-ai
     runtime: python
     plan: starter
     buildCommand: pip install -r requirements-service.txt
-    # PRO UPGRADE: Gunicorn handles simultaneous enterprise traffic seamlessly
     startCommand: gunicorn ai_service:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
     healthCheckPath: /health
     envVars:
-      - key: PYTHON_VERSION
-        value: "3.11.7"
       - key: INTERNAL_API_KEY
-        fromService:
-          type: web
-          name: builder-ui
-          envVarKey: INTERNAL_API_KEY
+        fromService: {type: web, name: builder-ui, envVarKey: INTERNAL_API_KEY}
       - key: DATABASE_URL
-        fromDatabase:
-          name: builder-db
-          property: connectionString
-      - key: REDIS_URL # NEW: Connects to Message Queue
-        fromService:
-          type: redis
-          name: builder-redis
-          property: connectionString
+        fromDatabase: {name: builder-db, property: connectionString}
+      - key: REDIS_URL
+        fromService: {type: redis, name: builder-redis, property: connectionString}
 
-  # ── 3. THE HEAVY LIFTER (AI Background Worker) [NEW] ──────────────────────
-  # THIS IS WHERE YOU SAVE MONEY. It runs in the background. It is totally 
-  # immune to HTTP timeouts. If an API fails, it automatically retries.
+  # ── 3. THE AI BACKGROUND WORKER (Heavy Lifter) ─────────────────────────────
   - type: worker
     name: builder-ai-worker
     runtime: python
-    plan: starter
+    plan: standard # AI background workers need slightly more RAM
     buildCommand: pip install -r requirements-service.txt
     startCommand: celery -A ai_worker.celery_app worker --loglevel=info --concurrency=2
     envVars:
-      - key: PYTHON_VERSION
-        value: "3.11.7"
       - key: REDIS_URL
-        fromService:
-          type: redis
-          name: builder-redis
-          property: connectionString
+        fromService: {type: redis, name: builder-redis, property: connectionString}
       - key: DATABASE_URL
-        fromDatabase:
-          name: builder-db
-          property: connectionString
-      - key: BILLING_SERVICE_URL
-        value: http://builder-billing:10000
-      - key: WORKSHOP_SERVICE_URL
-        value: http://builder-workshop:10000
-      - key: INTERNAL_API_KEY
-        fromService:
-          type: web
-          name: builder-ui
-          envVarKey: INTERNAL_API_KEY
-      # Moved AI keys here so they are completely isolated from the web server
+        fromDatabase: {name: builder-db, property: connectionString}
       - key: XAI_API_KEY
         sync: false
       - key: ANTHROPIC_API_KEY
@@ -103,7 +68,38 @@ services:
       - key: GEMINI_API_KEY
         sync: false
 
-  # ── 4. THE SECURITY GUARD (Auth) ─────────────────────────────────────────
+  # ── 4. THE WORKSHOP GATEWAY (Fast CRUD) ────────────────────────────────────
+  - type: web
+    name: builder-workshop
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements-service.txt
+    startCommand: gunicorn workshop_service:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
+    healthCheckPath: /health
+    envVars:
+      - key: INTERNAL_API_KEY
+        fromService: {type: web, name: builder-ui, envVarKey: INTERNAL_API_KEY}
+      - key: DATABASE_URL
+        fromDatabase: {name: builder-db, property: connectionString}
+      - key: REDIS_URL
+        fromService: {type: redis, name: builder-redis, property: connectionString}
+
+  # ── 5. THE WORKSHOP WORKER (X-Ray Vision Scans) ────────────────────────────
+  - type: worker
+    name: builder-workshop-worker
+    runtime: python
+    plan: standard
+    buildCommand: pip install -r requirements-service.txt
+    startCommand: celery -A workshop_worker.celery_app worker --loglevel=info --concurrency=2
+    envVars:
+      - key: REDIS_URL
+        fromService: {type: redis, name: builder-redis, property: connectionString}
+      - key: DATABASE_URL
+        fromDatabase: {name: builder-db, property: connectionString}
+      - key: GEMINI_API_KEY
+        sync: false
+
+  # ── 6. THE SECURITY GUARD (Auth) ───────────────────────────────────────────
   - type: web
     name: builder-auth
     runtime: python
@@ -112,21 +108,14 @@ services:
     startCommand: gunicorn auth_service:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
     healthCheckPath: /health
     envVars:
-      - key: PYTHON_VERSION
-        value: "3.11.7"
       - key: INTERNAL_API_KEY
-        fromService:
-          type: web
-          name: builder-ui
-          envVarKey: INTERNAL_API_KEY
+        fromService: {type: web, name: builder-ui, envVarKey: INTERNAL_API_KEY}
       - key: DATABASE_URL
-        fromDatabase:
-          name: builder-db
-          property: connectionString
+        fromDatabase: {name: builder-db, property: connectionString}
       - key: JWT_SECRET
         generateValue: true
 
-  # ── 5. THE CASH REGISTER (Billing) ───────────────────────────────────────
+  # ── 7. THE CASH REGISTER (Billing & Stripe) ────────────────────────────────
   - type: web
     name: builder-billing
     runtime: python
@@ -135,13 +124,10 @@ services:
     startCommand: gunicorn billing_service:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
     healthCheckPath: /health
     envVars:
-      - key: PYTHON_VERSION
-        value: "3.11.7"
       - key: INTERNAL_API_KEY
-        fromService:
-          type: web
-          name: builder-ui
-          envVarKey: INTERNAL_API_KEY
+        fromService: {type: web, name: builder-ui, envVarKey: INTERNAL_API_KEY}
+      - key: REDIS_URL
+        fromService: {type: redis, name: builder-redis, property: connectionString}
       - key: AUTH_SERVICE_URL
         value: http://builder-auth:10000
       - key: STRIPE_SECRET_KEY
@@ -151,7 +137,7 @@ services:
       - key: APP_URL
         sync: false
 
-  # ── 6. THE LOGBOOK (Analytics) ────────────────────────────────────────────
+  # ── 8. THE LOGBOOK (Analytics) ─────────────────────────────────────────────
   - type: web
     name: builder-analytics
     runtime: python
@@ -160,19 +146,12 @@ services:
     startCommand: gunicorn analytics_service:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
     healthCheckPath: /health
     envVars:
-      - key: PYTHON_VERSION
-        value: "3.11.7"
       - key: INTERNAL_API_KEY
-        fromService:
-          type: web
-          name: builder-ui
-          envVarKey: INTERNAL_API_KEY
+        fromService: {type: web, name: builder-ui, envVarKey: INTERNAL_API_KEY}
       - key: DATABASE_URL
-        fromDatabase:
-          name: builder-db
-          property: connectionString
+        fromDatabase: {name: builder-db, property: connectionString}
 
-  # ── 7. THE CONTROL ROOM (Admin) ──────────────────────────────────────────
+  # ── 9. THE CONTROL ROOM (Admin) ────────────────────────────────────────────
   - type: web
     name: builder-admin
     runtime: python
@@ -181,22 +160,12 @@ services:
     startCommand: gunicorn admin_service:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
     healthCheckPath: /health
     envVars:
-      - key: PYTHON_VERSION
-        value: "3.11.7"
       - key: MASTER_KEY
-        fromService:
-          type: web
-          name: builder-ui
-          envVarKey: MASTER_KEY
+        fromService: {type: web, name: builder-ui, envVarKey: MASTER_KEY}
       - key: INTERNAL_API_KEY
-        fromService:
-          type: web
-          name: builder-ui
-          envVarKey: INTERNAL_API_KEY
+        fromService: {type: web, name: builder-ui, envVarKey: INTERNAL_API_KEY}
       - key: DATABASE_URL
-        fromDatabase:
-          name: builder-db
-          property: connectionString
+        fromDatabase: {name: builder-db, property: connectionString}
       - key: AUTH_SERVICE_URL
         value: http://builder-auth:10000
       - key: AI_SERVICE_URL
@@ -204,7 +173,7 @@ services:
       - key: ANALYTICS_SERVICE_URL
         value: http://builder-analytics:10000
 
-  # ── 8. THE PRINT SHOP (Export) ────────────────────────────────────────────
+  # ── 10. THE PRINT SHOP (Export) ────────────────────────────────────────────
   - type: web
     name: builder-export
     runtime: python
@@ -213,36 +182,10 @@ services:
     startCommand: gunicorn export_service:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
     healthCheckPath: /health
     envVars:
-      - key: PYTHON_VERSION
-        value: "3.11.7"
       - key: INTERNAL_API_KEY
-        fromService:
-          type: web
-          name: builder-ui
-          envVarKey: INTERNAL_API_KEY
+        fromService: {type: web, name: builder-ui, envVarKey: INTERNAL_API_KEY}
 
-  # ── 9. THE SHOP FLOOR (Workshop) ─────────────────────────────────────────
-  - type: web
-    name: builder-workshop
-    runtime: python
-    plan: starter
-    buildCommand: pip install -r requirements-service.txt
-    startCommand: gunicorn workshop_service:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
-    healthCheckPath: /health
-    envVars:
-      - key: PYTHON_VERSION
-        value: "3.11.7"
-      - key: INTERNAL_API_KEY
-        fromService:
-          type: web
-          name: builder-ui
-          envVarKey: INTERNAL_API_KEY
-      - key: DATABASE_URL
-        fromDatabase:
-          name: builder-db
-          property: connectionString
-
-  # ── 10. THE MORNING INSPECTION (Scheduler) ─────────────────────────────────
+  # ── 11. THE MORNING INSPECTION (Cron Scheduler) ────────────────────────────
   - type: cron
     name: builder-scheduler
     runtime: python
@@ -250,33 +193,28 @@ services:
     buildCommand: pip install -r requirements-service.txt
     startCommand: python scheduler_worker.py
     envVars:
-      - key: PYTHON_VERSION
-        value: "3.11.7"
       - key: INTERNAL_API_KEY
-        fromService:
-          type: web
-          name: builder-ui
-          envVarKey: INTERNAL_API_KEY
+        fromService: {type: web, name: builder-ui, envVarKey: INTERNAL_API_KEY}
+      - key: MASTER_KEY
+        fromService: {type: web, name: builder-ui, envVarKey: MASTER_KEY}
       - key: AUTH_SERVICE_URL
         value: http://builder-auth:10000
+      - key: ADMIN_SERVICE_URL
+        value: http://builder-admin:10000
       - key: RESEND_API_KEY
-        sync: false
-      - key: FROM_EMAIL
         sync: false
       - key: STRIPE_PAYMENT_URL
         sync: false
       - key: APP_URL
         sync: false
 
-# ── 11. THE HIGH-SPEED MEMORY (Redis Message Broker) [NEW] ─────────────────
-# Required for Celery background workers to process AI generation queues
+# ── 12. MESSAGE BROKER & DATABASES ───────────────────────────────────────────
 redis:
   - name: builder-redis
     plan: starter
-    ipAllowList: [] # Blank means highly secure (only your internal Render services can access it)
+    ipAllowList: [] 
 
-# ── 12. THE STORAGE TANK (Database) ──────────────────────────────────────────
 databases:
   - name: builder-db
-    plan: basic-256mb
+    plan: standard
     postgresMajorVersion: "16"
