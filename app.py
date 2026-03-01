@@ -532,13 +532,14 @@ def login():
             NO LICENSE? CONTACT AoC3P0 SYSTEMS TO ACQUIRE ACCESS
         </div>""")
 
-    # Purchase link
-    if STRIPE_PAYMENT_URL and STRIPE_PAYMENT_URL != "#":
+    # Purchase link — only render if URL uses a safe protocol (prevent XSS via javascript: URIs)
+    if STRIPE_PAYMENT_URL and STRIPE_PAYMENT_URL != "#" and \
+       STRIPE_PAYMENT_URL.startswith(("https://", "http://")):
         safe_html("<div style='height:8px'></div>")
         col1, col2, col3 = st.columns([1, 1.0, 1])
         with col2:
             safe_html(f"""
-            <a href="{STRIPE_PAYMENT_URL}" target="_blank" style="display:block;background:linear-gradient(135deg,#8B1A00,#cc4400,#ff6600);
+            <a href="{esc(STRIPE_PAYMENT_URL)}" target="_blank" style="display:block;background:linear-gradient(135deg,#8B1A00,#cc4400,#ff6600);
                 color:#000;font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:4px;
                 text-align:center;padding:14px;text-decoration:none;border:1px solid #ff8800;
                 box-shadow:0 0 30px rgba(255,100,0,.3);margin-top:4px;">
