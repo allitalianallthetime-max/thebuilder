@@ -239,7 +239,7 @@ async def export_pdf(req: ExportRequest, x_internal_key: str = Header(None)):
         )
     except Exception as e:
         log.error(f"PDF generation error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="PDF generation failed. Please try again or contact support.")
 
 @app.post("/export/text")
 async def export_text(req: ExportRequest, x_internal_key: str = Header(None)):
