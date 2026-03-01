@@ -1,12 +1,13 @@
 # requirements-service.txt
-# Used by: ai_service, auth_service, billing_service,
+# Used by: ai_service, ai_worker, auth_service, billing_service,
 #          analytics_service, admin_service, export_service,
-#          workshop_service
+#          workshop_service, workshop_worker, scheduler_worker
 #
 # protobuf >= 5.29 required for Python 3.14 (Render default)
 
 fastapi
 uvicorn[standard]
+gunicorn
 httpx
 stripe
 PyJWT
@@ -19,3 +20,5 @@ google-generativeai
 reportlab
 protobuf>=5.29.0
 python-multipart
+redis
+celery
