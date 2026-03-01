@@ -8,5 +8,4 @@
 streamlit>=1.44.0,<2.0
 httpx
 python-dotenv
-pandas
 protobuf>=5.29.0
