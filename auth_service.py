@@ -14,7 +14,6 @@ import psycopg2
 import psycopg2.pool
 import jwt
 import secrets
-import hashlib
 import datetime
 import logging
 from fastapi import FastAPI, HTTPException, Header, Depends
@@ -105,8 +104,6 @@ def generate_license_key() -> str:
     parts = [secrets.token_hex(2).upper() for _ in range(3)]
     return f"BUILDER-{'-'.join(parts)}"
 
-def hash_key(key: str) -> str:
-    return hashlib.sha256(key.encode()).hexdigest()
 
 # ── Models ────────────────────────────────────────────────────────────────────
 class LicenseCreateRequest(BaseModel):
