@@ -194,7 +194,33 @@ services:
       - key: GEMINI_API_KEY
         sync: false
 
-# ── 8. THE STORAGE TANK (Database) ───────────────────────────────────────────
+  # ── 9. THE MORNING INSPECTION (Scheduler) ─────────────────────────────────
+  - type: cron
+    name: builder-scheduler
+    runtime: python
+    schedule: "0 8 * * *"
+    buildCommand: pip install -r requirements-service.txt
+    startCommand: python scheduler_worker.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.7"
+      - key: INTERNAL_API_KEY
+        fromService:
+          type: web
+          name: builder-ui
+          envVarKey: INTERNAL_API_KEY
+      - key: AUTH_SERVICE_URL
+        value: http://builder-auth:10000
+      - key: RESEND_API_KEY
+        sync: false
+      - key: FROM_EMAIL
+        sync: false
+      - key: STRIPE_PAYMENT_URL
+        sync: false
+      - key: APP_URL
+        sync: false
+
+# ── 10. THE STORAGE TANK (Database) ──────────────────────────────────────────
 databases:
   - name: builder-db
     plan: basic-256mb
