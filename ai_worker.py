@@ -93,31 +93,28 @@ async def get_grok_response(junk_desc: str, project_type: str, max_retries=3) ->
                 return {"text": "[SHOP FOREMAN OFFLINE] Grok unavailable — proceeding with standard specs.", "tokens": 0}
             await asyncio.sleep(2 ** attempt)
 
-async def get_claude_response(junk_desc: str, project_type: str, max_retries=3) -> dict:
-    """The Precision Engineer: Claude 3.7 Sonnet for code and schematics."""
-    if not ANTHROPIC_API_KEY:
+
+async def get_claude(desc, proj):
+    """The Precision Engineer: Anthropic Claude 3.7 Sonnet (Latest)"""
+    if not os.getenv("ANTHROPIC_API_KEY"):
         return {"text": "[PRECISION ENGINEER OFFLINE] ANTHROPIC_API_KEY not configured.", "tokens": 0}
 
-    for attempt in range(max_retries):
+    import asyncio
+    for attempt in range(3):
         try:
-            message = await anthropic_client.messages.create(
-                model="claude-3-7-sonnet-20250219", 
-                max_tokens=1500,
+            # LATEST ANTHROPIC SDK SYNTAX (Uses 'system' param and rolling latest tag)
+            msg = await anthropic_client.messages.create(
+                model="claude-3-7-sonnet-latest", 
+                max_tokens=2048, 
                 temperature=0.2,
-                messages=[
-                    {"role": "user", "content": f"You are a Precision Engineer specializing in embedded systems, Python automation, and electrical engineering. TASK: Design the control system for a {project_type} built from: {junk_desc}"}
-                ]
+                system="You are an elite Cybernetics & Robotics Engineer. Provide raw, technical code, wiring schematics, and structural stress thresholds. No fluff.",
+                messages=[{"role": "user", "content": f"Design the advanced control systems and schematics for a {proj} built from: {desc}"}]
             )
-            return {
-                "text": message.content[0].text,
-                "tokens": message.usage.input_tokens + message.usage.output_tokens
-            }
+            return {"text": msg.content[0].text, "tokens": msg.usage.input_tokens + msg.usage.output_tokens}
         except Exception as e:
-            log.warning(f"Claude attempt {attempt+1} failed: {e}")
-            if attempt == max_retries - 1:
+            if attempt == 2:
                 return {"text": "[PRECISION ENGINEER OFFLINE] Claude unavailable.", "tokens": 0}
             await asyncio.sleep(2 ** attempt)
-
 async def get_gemini_response(junk_desc: str, project_type: str, grok_notes: str, claude_notes: str, detail_level: str, max_retries: int=3) -> dict:
     """The General Contractor: Gemini 2.5 Flash for final blueprint synthesis."""
     if not GEMINI_API_KEY:
