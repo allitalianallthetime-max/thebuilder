@@ -1,9 +1,10 @@
 services:
+  # ── FRONTEND (UI) ──
   - type: web
     name: builder-ui
     runtime: python
     plan: starter
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements-ui.txt
     startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
     envVars:
       - key: AUTH_SERVICE_URL
@@ -27,11 +28,12 @@ services:
       - key: STRIPE_PAYMENT_URL
         sync: false
 
+  # ── AI BACKEND & WORKER ──
   - type: web
     name: builder-ai
     runtime: python
     plan: starter
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements-service.txt
     startCommand: gunicorn ai_service:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
     envVars:
       - key: INTERNAL_API_KEY
@@ -45,7 +47,7 @@ services:
     name: builder-ai-worker
     runtime: python
     plan: standard
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements-service.txt
     startCommand: celery -A ai_worker.celery_app worker --loglevel=info --concurrency=2
     envVars:
       - key: REDIS_URL
@@ -59,11 +61,12 @@ services:
       - key: GEMINI_API_KEY
         sync: false
 
+  # ── WORKSHOP BACKEND & WORKER (Vision) ──
   - type: web
     name: builder-workshop
     runtime: python
     plan: starter
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements-service.txt
     startCommand: gunicorn workshop_service:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
     envVars:
       - key: INTERNAL_API_KEY
@@ -77,7 +80,7 @@ services:
     name: builder-workshop-worker
     runtime: python
     plan: standard
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements-service.txt
     startCommand: celery -A workshop_worker.celery_app worker --loglevel=info --concurrency=2
     envVars:
       - key: REDIS_URL
@@ -87,11 +90,12 @@ services:
       - key: GEMINI_API_KEY
         sync: false
 
+  # ── SUPPORTING MICROSERVICES ──
   - type: web
     name: builder-auth
     runtime: python
     plan: starter
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements-service.txt
     startCommand: gunicorn auth_service:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
     envVars:
       - key: INTERNAL_API_KEY
@@ -105,7 +109,7 @@ services:
     name: builder-billing
     runtime: python
     plan: starter
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements-service.txt
     startCommand: gunicorn billing_service:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
     envVars:
       - key: INTERNAL_API_KEY
@@ -125,7 +129,7 @@ services:
     name: builder-analytics
     runtime: python
     plan: starter
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements-service.txt
     startCommand: gunicorn analytics_service:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
     envVars:
       - key: INTERNAL_API_KEY
@@ -137,7 +141,7 @@ services:
     name: builder-admin
     runtime: python
     plan: starter
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements-service.txt
     startCommand: gunicorn admin_service:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
     envVars:
       - key: MASTER_KEY
@@ -153,7 +157,7 @@ services:
     name: builder-export
     runtime: python
     plan: starter
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements-service.txt
     startCommand: gunicorn export_service:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
     envVars:
       - key: INTERNAL_API_KEY
@@ -163,7 +167,7 @@ services:
     name: builder-scheduler
     runtime: python
     schedule: "0 8 * * *"
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements-service.txt
     startCommand: python scheduler_worker.py
     envVars:
       - key: INTERNAL_API_KEY
@@ -175,6 +179,7 @@ services:
       - key: GMAIL_APP_PW
         sync: false
 
+  # ── MESSAGE BROKER & DATABASES ──
   - type: redis
     name: builder-redis
     plan: free
