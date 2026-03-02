@@ -1,5 +1,5 @@
 import os, secrets, psycopg2.pool, redis, json
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, Depends, HTTPException
 from pydantic import BaseModel
 from celery.result import AsyncResult
 from celery import Celery
@@ -21,7 +21,8 @@ class BuildReq(BaseModel): junk_desc: str; project_type: str; detail_level: str=
 class ChatMsg(BaseModel): user_name: str; tier: str; message: str
 class BattleReq(BaseModel): robot_a_name: str; robot_a_specs: str; robot_b_name: str; robot_b_specs: str
 
-@app.post("/generate", dependencies=[Header(verify_key)])
+# 👇 FIXED: Changed Header(verify_key) to Depends(verify_key)
+@app.post("/generate", dependencies=[Depends(verify_key)])
 def gen_blueprint(req: BuildReq):
     with db_pool.getconn() as conn:
         with conn.cursor() as cur:
@@ -35,25 +36,28 @@ def gen_blueprint(req: BuildReq):
     task = celery_app.send_task("ai_worker.forge_blueprint_task", args=[req.junk_desc, req.project_type, req.user_email, req.detail_level])
     return {"status": "processing", "task_id": task.id}
 
-@app.get("/generate/status/{tid}", dependencies=[Header(verify_key)])
+@app.get("/generate/status/{tid}", dependencies=[Depends(verify_key)])
 def chk_task(tid: str):
     res = AsyncResult(tid, app=celery_app)
     if res.state == 'SUCCESS': return {"status": "complete", "result": res.result}
     if res.state == 'FAILURE': return {"status": "failed", "error": str(res.info)}
     return {"status": "processing", "message": res.info.get("message", "Processing...") if isinstance(res.info, dict) else ""}
 
-@app.post("/arena/chat/send", dependencies=[Header(verify_key)])
+@app.post("/arena/chat/send", dependencies=[Depends(verify_key)])
 def send_chat(msg: ChatMsg):
     if redis_client:
         redis_client.lpush("global_chat", json.dumps({"user": msg.user_name, "tier": msg.tier, "text": msg.message, "time": datetime.utcnow().strftime("%H:%M")}))
         redis_client.ltrim("global_chat", 0, 49) 
     return {"status": "ok"}
 
-@app.get("/arena/chat/recent", dependencies=[Header(verify_key)])
+@app.get("/arena/chat/recent", dependencies=[Depends(verify_key)])
 def get_chat():
     return [json.loads(m) for m in redis_client.lrange("global_chat", 0, 49)][::-1] if redis_client else []
 
-@app.post("/arena/battle", dependencies=[Header(verify_key)])
+@app.post("/arena/battle", dependencies=[Depends(verify_key)])
 def battle(req: BattleReq):
     task = celery_app.send_task("ai_worker.simulate_battle_task", args=[req.robot_a_name, req.robot_a_specs, req.robot_b_name, req.robot_b_specs])
     return {"status": "processing", "task_id": task.id}
+    
+@app.get("/health")
+def health(): return {"status": "ok"}
